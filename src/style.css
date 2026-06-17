@@ -193,15 +193,17 @@ html, body {
    Topbar
 =================================== */
 .topbar {
-  height: var(--topbar-height);
+  min-height: var(--topbar-height);
+  height: auto;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 0 22px;
+  padding: 10px 22px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   flex-shrink: 0;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .topbar-left {
@@ -210,6 +212,14 @@ html, body {
   gap: 16px;
   flex: 1;
   min-width: 0;
+  padding-top: 4px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .page-title {
@@ -409,7 +419,7 @@ html, body {
   white-space: nowrap;
 }
 
-.topbar-right { display: flex; align-items: center; gap: 8px; }
+
 
 
 .icon-btn {
