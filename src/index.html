@@ -86,13 +86,43 @@
           </div>
 
           <!-- 全局搜索栏 -->
-          <div class="search-bar" id="search-bar" style="display:none">
-            <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <input type="text" id="search-input" placeholder="全局搜索：标题、内容、项目路径..." autocomplete="off" />
-            <kbd class="search-hint">Enter</kbd>
+          <div class="search-bar-wrap" id="search-bar" style="display:none">
+            <!-- 主搜索行 -->
+            <div class="search-main-row">
+              <svg class="search-icon" width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input type="text" id="search-input" placeholder="全局搜索内容..." autocomplete="off" />
+              <button class="search-mode-toggle" id="search-mode-toggle" onclick="toggleAdvancedSearch()" title="条件搜索">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span id="search-mode-label">条件</span>
+              </button>
+              <kbd class="search-hint">Enter</kbd>
+            </div>
+            <!-- 高级条件行（默认隐藏） -->
+            <div class="search-advanced-row" id="search-advanced-row" style="display:none">
+              <div class="search-scope-tabs" id="search-scope-tabs">
+                <button class="scope-tab active" data-scope="all" onclick="setSearchScope('all')">全部</button>
+                <button class="scope-tab" data-scope="user" onclick="setSearchScope('user')">仅用户提问</button>
+                <button class="scope-tab" data-scope="assistant" onclick="setSearchScope('assistant')">仅 Codex 回答</button>
+                <button class="scope-tab" data-scope="pair" onclick="setSearchScope('pair')">提问+回答配对</button>
+              </div>
+              <!-- pair 模式：两个输入框 -->
+              <div class="search-pair-row" id="search-pair-row" style="display:none">
+                <div class="pair-input-wrap">
+                  <span class="pair-label user-label">问</span>
+                  <input type="text" id="pair-user-input" placeholder="用户提问关键词..." autocomplete="off"/>
+                </div>
+                <div class="pair-input-wrap">
+                  <span class="pair-label assistant-label">答</span>
+                  <input type="text" id="pair-assistant-input" placeholder="Codex 回答关键词..." autocomplete="off"/>
+                </div>
+                <button class="pair-search-btn" onclick="doPairSearch()">搜索配对</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="topbar-right">

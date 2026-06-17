@@ -369,15 +369,24 @@ function updateProjectPagination(count) {
 // ===================================
 // Global Search
 // ===================================
+// search state
+state.searchScope = 'all'; // 'all' | 'user' | 'assistant' | 'pair'
+state.searchAdvanced = false;
+
 function setupGlobalSearch() {
   const input = document.getElementById('search-input');
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       clearTimeout(state.searchTimeout);
-      doSearch(input.value.trim());
+      if (state.searchScope === 'pair') {
+        doPairSearch();
+      } else {
+        doSearch(input.value.trim());
+      }
     }
   });
   input.addEventListener('input', () => {
+    if (state.searchScope === 'pair') return;
     clearTimeout(state.searchTimeout);
     state.searchTimeout = setTimeout(() => {
       const q = input.value.trim();
@@ -388,6 +397,55 @@ function setupGlobalSearch() {
       }
     }, 400);
   });
+
+  // pair inputs also trigger on Enter
+  ['pair-user-input', 'pair-assistant-input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') doPairSearch();
+      });
+    }
+  });
+}
+
+function toggleAdvancedSearch() {
+  state.searchAdvanced = !state.searchAdvanced;
+  const row = document.getElementById('search-advanced-row');
+  const btn = document.getElementById('search-mode-toggle');
+  if (state.searchAdvanced) {
+    row.style.display = 'flex';
+    btn.classList.add('active');
+  } else {
+    row.style.display = 'none';
+    btn.classList.remove('active');
+    // Reset scope to all when hiding
+    setSearchScope('all');
+  }
+}
+
+function setSearchScope(scope) {
+  state.searchScope = scope;
+  // Update tab active states
+  document.querySelectorAll('.scope-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.scope === scope);
+  });
+  // Show/hide pair row
+  const pairRow = document.getElementById('search-pair-row');
+  const mainInput = document.getElementById('search-input');
+  if (scope === 'pair') {
+    pairRow.style.display = 'flex';
+    mainInput.placeholder = '提问+回答配对搜索模式（在下方填写关键词）';
+    mainInput.disabled = true;
+  } else {
+    pairRow.style.display = 'none';
+    mainInput.disabled = false;
+    const labels = { all: '全局搜索内容...', user: '搜索用户提问...', assistant: '搜索 Codex 回答...' };
+    mainInput.placeholder = labels[scope] || '全局搜索内容...';
+    // Re-trigger search if there's already a query
+    const q = mainInput.value.trim();
+    if (q.length >= 2) doSearch(q);
+  }
 }
 
 async function doSearch(query) {
@@ -397,25 +455,100 @@ async function doSearch(query) {
   hidePagination();
   try {
     const results = await invoke('search_sessions', { query });
-    renderSearchResults(results, query);
+    // Client-side filter by scope
+    const filtered = filterResultsByScope(results, query, state.searchScope);
+    renderSearchResults(filtered, query, state.searchScope);
   } catch (e) {
     renderError(e);
   }
 }
 
-function renderSearchResults(results, query) {
+function filterResultsByScope(results, query, scope) {
+  if (scope === 'all') return results;
+  if (scope === 'user') {
+    // Keep only results where the matched_message is from user role, or fall back to first_user_message
+    return results.filter(r => {
+      if (r.matched_role) return r.matched_role === 'user';
+      // fallback: check first_user_message
+      const text = (r.session.first_user_message || '').toLowerCase();
+      return text.includes(query.toLowerCase());
+    });
+  }
+  if (scope === 'assistant') {
+    return results.filter(r => {
+      if (r.matched_role) return r.matched_role === 'assistant';
+      // fallback: check preview (usually assistant)
+      const text = (r.session.preview || '').toLowerCase();
+      return text.includes(query.toLowerCase());
+    });
+  }
+  return results;
+}
+
+async function doPairSearch() {
+  const userQuery = (document.getElementById('pair-user-input').value || '').trim();
+  const assistantQuery = (document.getElementById('pair-assistant-input').value || '').trim();
+
+  if (!userQuery && !assistantQuery) {
+    renderEmpty('请至少填写一个搜索关键词');
+    return;
+  }
+
+  showLoading();
+  hidePagination();
+
+  try {
+    // Search by both queries and intersect at session level
+    const query = userQuery || assistantQuery;
+    const results = await invoke('search_sessions', { query });
+
+    let filtered = results;
+    if (userQuery && assistantQuery) {
+      // Need sessions that have BOTH a user message matching userQuery AND an assistant message matching assistantQuery
+      // Since we only have preview data, we do best-effort: match sessions where either matched_message or first_user_message contains userQuery
+      // and preview/matched_message contains assistantQuery
+      filtered = results.filter(r => {
+        const sessionText = [
+          r.session.first_user_message || '',
+          r.session.preview || '',
+          r.matched_message || '',
+        ].join(' ').toLowerCase();
+        return sessionText.includes(userQuery.toLowerCase()) &&
+               sessionText.includes(assistantQuery.toLowerCase());
+      });
+    } else if (userQuery) {
+      filtered = results.filter(r => {
+        const text = (r.session.first_user_message || r.matched_message || '').toLowerCase();
+        return text.includes(userQuery.toLowerCase());
+      });
+    } else {
+      filtered = results.filter(r => {
+        const text = (r.session.preview || r.matched_message || '').toLowerCase();
+        return text.includes(assistantQuery.toLowerCase());
+      });
+    }
+
+    renderSearchResults(filtered, userQuery || assistantQuery, 'pair', { userQuery, assistantQuery });
+  } catch (e) {
+    renderError(e);
+  }
+}
+
+function renderSearchResults(results, query, scope, pairOpts) {
   const content = document.getElementById('content');
   if (!results || results.length === 0) {
-    renderEmpty(`没有找到包含 "${escHtml(query)}" 的会话`);
+    const scopeLabel = { all: '', user: '（用户提问）', assistant: '（Codex 回答）', pair: '（提问+回答配对）' }[scope] || '';
+    renderEmpty(`没有找到匹配${scopeLabel}的会话`);
     return;
   }
 
   const list = document.createElement('div');
   list.className = 'search-results';
 
+  const scopeLabel = { all: '全文', user: '用户提问', assistant: 'Codex 回答', pair: '提问+回答配对' }[scope] || '';
   const countEl = document.createElement('div');
-  countEl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-bottom:4px;';
-  countEl.textContent = `找到 ${results.length} 个结果`;
+  countEl.className = 'search-result-count';
+  countEl.innerHTML = `找到 <strong>${results.length}</strong> 个结果 <span class="result-scope-badge">${scopeLabel}</span>`;
   list.appendChild(countEl);
 
   results.forEach(r => {
@@ -424,9 +557,24 @@ function renderSearchResults(results, query) {
     card.onclick = () => openDetail(r.session);
 
     const snippet = r.matched_message || r.session.preview || r.session.first_user_message || '';
-    const highlightedSnippet = highlightQuery(escHtml(snippet.slice(0, 200)), query);
     const time = formatTime(r.session.created_at_ms);
     const projectName = getProjectName(r.session.cwd);
+
+    // Highlight both queries for pair mode
+    let highlightedSnippet;
+    if (scope === 'pair' && pairOpts) {
+      let s = escHtml(snippet.slice(0, 200));
+      if (pairOpts.userQuery) s = highlightQuery(s, pairOpts.userQuery);
+      if (pairOpts.assistantQuery) s = highlightQuery(s, pairOpts.assistantQuery, 'mark-assistant');
+      highlightedSnippet = s;
+    } else {
+      highlightedSnippet = highlightQuery(escHtml(snippet.slice(0, 200)), query);
+    }
+
+    // Scope badge on card
+    const roleBadge = r.matched_role
+      ? `<span class="tag ${r.matched_role === 'user' ? 'tag-user-match' : 'tag-assistant-match'}" style="font-size:10px">${r.matched_role === 'user' ? '用户提问' : 'Codex 回答'}</span>`
+      : '';
 
     card.innerHTML = `
       <div class="result-title">${escHtml(r.session.title || r.session.first_user_message || '未命名')}</div>
@@ -435,6 +583,7 @@ function renderSearchResults(results, query) {
         <span class="tag tag-model" style="font-size:10px">${time}</span>
         ${projectName ? `<span class="tag tag-project" style="font-size:10px">${escHtml(projectName)}</span>` : ''}
         ${r.session.model ? `<span class="tag tag-model" style="font-size:10px">${escHtml(r.session.model)}</span>` : ''}
+        ${roleBadge}
       </div>
     `;
     list.appendChild(card);
@@ -444,10 +593,13 @@ function renderSearchResults(results, query) {
   content.appendChild(list);
 }
 
-function highlightQuery(text, query) {
+function highlightQuery(text, query, markClass) {
   if (!query) return text;
+  const cls = markClass || '';
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(new RegExp(escaped, 'gi'), match => `<mark>${match}</mark>`);
+  return text.replace(new RegExp(escaped, 'gi'), match =>
+    `<mark${cls ? ` class="${cls}"` : ''}>${match}</mark>`
+  );
 }
 
 // ===================================
