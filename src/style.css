@@ -240,7 +240,8 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   transition: border-color var(--transition), box-shadow var(--transition);
-  overflow: hidden;
+  /* overflow must be visible so expanded pair inputs are not clipped */
+  overflow: visible;
 }
 
 .search-bar-wrap:focus-within {

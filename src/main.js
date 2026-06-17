@@ -435,11 +435,15 @@ function setSearchScope(scope) {
   const mainInput = document.getElementById('search-input');
   if (scope === 'pair') {
     pairRow.style.display = 'flex';
-    mainInput.placeholder = '提问+回答配对搜索模式（在下方填写关键词）';
-    mainInput.disabled = true;
+    mainInput.placeholder = '提问+回答配对模式（请在下方填写关键词）';
+    mainInput.readOnly = true;
+    mainInput.style.opacity = '0.45';
+    mainInput.style.cursor = 'not-allowed';
   } else {
     pairRow.style.display = 'none';
-    mainInput.disabled = false;
+    mainInput.readOnly = false;
+    mainInput.style.opacity = '';
+    mainInput.style.cursor = '';
     const labels = { all: '全局搜索内容...', user: '搜索用户提问...', assistant: '搜索 Codex 回答...' };
     mainInput.placeholder = labels[scope] || '全局搜索内容...';
     // Re-trigger search if there's already a query
