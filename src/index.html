@@ -185,27 +185,35 @@
 
       <!-- 会话内搜索栏 -->
       <div class="detail-search-bar" id="detail-search-bar">
-        <svg class="search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-        <input type="text" id="detail-search-input" placeholder="在会话中搜索..." autocomplete="off" />
-        <span class="detail-search-count" id="detail-search-count"></span>
-        <button class="dsearch-nav-btn" id="dsearch-prev" onclick="detailSearchNav(-1)" title="上一处" disabled>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M9 8L6 5 3 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <div class="detail-search-main">
+          <svg class="search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-        </button>
-        <button class="dsearch-nav-btn" id="dsearch-next" onclick="detailSearchNav(1)" title="下一处" disabled>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M3 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
-        <button class="dsearch-clear-btn" id="dsearch-clear" onclick="clearDetailSearch()">
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-            <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
+          <input type="text" id="detail-search-input" placeholder="在会话中搜索..." autocomplete="off" />
+          <span class="detail-search-count" id="detail-search-count"></span>
+          <button class="dsearch-nav-btn" id="dsearch-prev" onclick="detailSearchNav(-1)" title="上一处" disabled>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M9 8L6 5 3 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="dsearch-nav-btn" id="dsearch-next" onclick="detailSearchNav(1)" title="下一处" disabled>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M3 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="dsearch-clear-btn" id="dsearch-clear" onclick="clearDetailSearch()">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+              <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Scope filter tabs for detail search -->
+        <div class="detail-scope-tabs" id="detail-scope-tabs">
+          <button class="detail-scope-tab active" data-scope="all" onclick="setDetailSearchScope('all')">全部</button>
+          <button class="detail-scope-tab" data-scope="user" onclick="setDetailSearchScope('user')">提问</button>
+          <button class="detail-scope-tab" data-scope="assistant" onclick="setDetailSearchScope('assistant')">回答</button>
+        </div>
       </div>
 
       <div class="detail-messages" id="detail-messages">

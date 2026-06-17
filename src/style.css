@@ -1121,12 +1121,18 @@ html, body {
 =================================== */
 .detail-search-bar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  padding: 8px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-base);
   flex-shrink: 0;
+}
+
+.detail-search-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .detail-search-bar input {
@@ -1140,6 +1146,37 @@ html, body {
 }
 
 .detail-search-bar input::placeholder { color: var(--text-muted); }
+
+.detail-scope-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.detail-scope-tab {
+  padding: 2px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.detail-scope-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-hover);
+}
+
+.detail-scope-tab.active {
+  background: var(--accent-soft);
+  color: var(--text-accent);
+  border-color: var(--border-active);
+}
 
 .detail-search-count {
   font-size: 11px;

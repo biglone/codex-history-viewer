@@ -20,6 +20,7 @@ const state = {
   localFilter: '',
   // Detail in-session search state
   detailSearchQuery: '',
+  detailSearchScope: 'all',  // 'all' | 'user' | 'assistant'
   detailMatches: [],      // Array of <mark> elements
   detailMatchIndex: -1,   // Current active match index
   // Theme
@@ -735,12 +736,17 @@ function runDetailSearch(query) {
   const container = document.getElementById('detail-messages');
   if (!container) return;
 
-  const bubbles = container.querySelectorAll('.message-bubble');
-  const queryLower = query.toLowerCase();
+  // Filter bubbles by scope
+  const scope = state.detailSearchScope;
+  const messages = container.querySelectorAll('.message');
+  messages.forEach(msgEl => {
+    const isUser = msgEl.classList.contains('user');
+    const isAssistant = msgEl.classList.contains('assistant');
+    if (scope === 'user' && !isUser) return;
+    if (scope === 'assistant' && !isAssistant) return;
 
-  bubbles.forEach(bubble => {
-    // Only search in text nodes (avoid searching inside <pre> code blocks)
-    highlightTextInElement(bubble, queryLower, query);
+    const bubble = msgEl.querySelector('.message-bubble');
+    if (bubble) highlightTextInElement(bubble, query.toLowerCase(), query);
   });
 
   // Collect all marks
@@ -870,9 +876,25 @@ function clearDetailSearch() {
   const input = document.getElementById('detail-search-input');
   if (input) input.value = '';
   state.detailSearchQuery = '';
+  state.detailSearchScope = 'all';
+  // Reset scope tab UI
+  document.querySelectorAll('.detail-scope-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.scope === 'all');
+  });
   clearDetailSearchHighlights();
   updateDetailSearchCount(0, 0);
   updateDetailNavBtns();
+}
+
+function setDetailSearchScope(scope) {
+  state.detailSearchScope = scope;
+  document.querySelectorAll('.detail-scope-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.scope === scope);
+  });
+  // Re-run search with new scope
+  if (state.detailSearchQuery) {
+    runDetailSearch(state.detailSearchQuery);
+  }
 }
 
 function updateDetailSearchCount(current, total) {
