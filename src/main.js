@@ -22,12 +22,15 @@ const state = {
   detailSearchQuery: '',
   detailMatches: [],      // Array of <mark> elements
   detailMatchIndex: -1,   // Current active match index
+  // Theme
+  theme: 'default',
 };
 
 // ===================================
 // Init
 // ===================================
 window.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
   await loadTotalCount();
   await loadAllSessions();
   setupGlobalSearch();
@@ -873,6 +876,117 @@ document.addEventListener('keydown', (e) => {
       clearDetailSearch();
     } else if (state.detailOpen) {
       closeDetail();
+    } else {
+      closeThemePicker();
     }
   }
 });
+
+// ===================================
+// Theme System
+// ===================================
+const THEMES = [
+  {
+    id: 'default',
+    name: '紫罗兰暗色',
+    desc: '经典深紫，默认主题',
+    dots: ['#6366f1', '#8b5cf6', '#1a1b26'],
+  },
+  {
+    id: 'midnight',
+    name: '午夜深蓝',
+    desc: '深邃蓝色，冷静专注',
+    dots: ['#0ea5e9', '#38bdf8', '#111827'],
+  },
+  {
+    id: 'emerald',
+    name: '翡翠森林',
+    desc: '清新绿意，自然生机',
+    dots: ['#10b981', '#34d399', '#0d1f18'],
+  },
+  {
+    id: 'rose',
+    name: '玫瑰金红',
+    desc: '玫瑰热情，温暖浪漫',
+    dots: ['#f43f5e', '#fb7185', '#271017'],
+  },
+  {
+    id: 'amber',
+    name: '琥珀暮色',
+    desc: '金黄暮光，温暖沉稳',
+    dots: ['#f59e0b', '#fbbf24', '#231900'],
+  },
+  {
+    id: 'nord',
+    name: 'Nord 极光',
+    desc: '北欧灰蓝，清雅克制',
+    dots: ['#5e81ac', '#88c0d0', '#2e3044'],
+  },
+];
+
+function initTheme() {
+  const saved = localStorage.getItem('codex-theme') || 'default';
+  applyTheme(saved);
+  renderThemeList();
+}
+
+function applyTheme(themeId) {
+  state.theme = themeId;
+  if (themeId === 'default') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', themeId);
+  }
+  localStorage.setItem('codex-theme', themeId);
+  // Update active state in picker if open
+  document.querySelectorAll('.theme-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.themeId === themeId);
+  });
+  // Update theme button glow
+  const btn = document.getElementById('theme-btn');
+  if (btn) {
+    btn.style.color = 'var(--text-accent)';
+    setTimeout(() => { btn.style.color = ''; }, 600);
+  }
+}
+
+function renderThemeList() {
+  const list = document.getElementById('theme-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  THEMES.forEach(t => {
+    const item = document.createElement('button');
+    item.className = 'theme-item' + (t.id === state.theme ? ' active' : '');
+    item.dataset.themeId = t.id;
+    item.onclick = () => {
+      applyTheme(t.id);
+    };
+
+    const dotsHtml = t.dots.map(c =>
+      `<span class="theme-dot" style="background:${c}"></span>`
+    ).join('');
+
+    item.innerHTML = `
+      <div class="theme-preview">${dotsHtml}</div>
+      <div class="theme-info">
+        <div class="theme-name">${t.name}</div>
+        <div class="theme-desc">${t.desc}</div>
+      </div>
+      <svg class="theme-check" viewBox="0 0 14 14" fill="none">
+        <path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+    list.appendChild(item);
+  });
+}
+
+function openThemePicker() {
+  document.getElementById('theme-overlay').classList.add('visible');
+  document.getElementById('theme-picker').classList.add('visible');
+}
+
+function closeThemePicker() {
+  document.getElementById('theme-overlay').classList.remove('visible');
+  document.getElementById('theme-picker').classList.remove('visible');
+}
