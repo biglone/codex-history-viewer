@@ -1,0 +1,25 @@
+# Rust build output
+src-tauri/target/
+
+# Node.js
+node_modules/
+
+# Tauri generated files
+src-tauri/gen/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log

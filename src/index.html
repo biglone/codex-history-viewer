@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codex History Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect width="28" height="28" rx="8" fill="url(#logoGrad)"/>
+            <path d="M8 14C8 10.686 10.686 8 14 8s6 2.686 6 6-2.686 6-6 6" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="14" cy="14" r="2" fill="white"/>
+            <defs>
+              <linearGradient id="logoGrad" x1="0" y1="0" x2="28" y2="28">
+                <stop stop-color="#6366F1"/>
+                <stop offset="1" stop-color="#8B5CF6"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="logo-text">Codex Viewer</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" id="nav-all" onclick="switchView('all')">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8"/>
+            <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8"/>
+            <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8"/>
+            <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8"/>
+          </svg>
+          全部会话
+          <span class="nav-badge" id="total-count">...</span>
+        </button>
+        <button class="nav-item" id="nav-projects" onclick="switchView('projects')">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4a2 2 0 012-2h3l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V4z" fill="currentColor" opacity="0.8"/>
+          </svg>
+          按项目浏览
+        </button>
+        <button class="nav-item" id="nav-search" onclick="switchView('search')">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+          </svg>
+          全局搜索
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="storage-info">
+          <div class="storage-dot"></div>
+          <span id="storage-path">~/.codex</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title" id="page-title">全部会话</h1>
+
+          <!-- 局部过滤栏：在会话列表页显示 -->
+          <div class="local-filter-bar" id="local-filter-bar">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="local-filter-input" placeholder="过滤当前页..." autocomplete="off" />
+            <span class="filter-count" id="filter-count"></span>
+            <button class="filter-clear" id="filter-clear" onclick="clearLocalFilter()" style="display:none">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 全局搜索栏 -->
+          <div class="search-bar" id="search-bar" style="display:none">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="search-input" placeholder="全局搜索：标题、内容、项目路径..." autocomplete="off" />
+            <kbd class="search-hint">Enter</kbd>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn" onclick="refresh()" title="刷新">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M13.65 2.35A8 8 0 105.06 14.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M14 0v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Content Area -->
+      <div class="content" id="content">
+        <div class="loading-state" id="loading">
+          <div class="spinner"></div>
+          <p>加载中...</p>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <footer class="pagination" id="pagination" style="display:none">
+        <button class="page-btn" id="prev-btn" onclick="prevPage()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          上一页
+        </button>
+        <span class="page-info" id="page-info">第 1 页</span>
+        <button class="page-btn" id="next-btn" onclick="nextPage()">
+          下一页
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </footer>
+    </main>
+
+    <!-- Detail Panel -->
+    <div class="detail-overlay" id="detail-overlay" onclick="closeDetail()"></div>
+    <div class="detail-panel" id="detail-panel">
+      <div class="detail-header">
+        <div class="detail-title-wrap">
+          <h2 class="detail-title" id="detail-title">会话详情</h2>
+          <div class="detail-meta" id="detail-meta"></div>
+        </div>
+        <button class="icon-btn close-btn" onclick="closeDetail()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 会话内搜索栏 -->
+      <div class="detail-search-bar" id="detail-search-bar">
+        <svg class="search-icon" width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <input type="text" id="detail-search-input" placeholder="在会话中搜索..." autocomplete="off" />
+        <span class="detail-search-count" id="detail-search-count"></span>
+        <button class="dsearch-nav-btn" id="dsearch-prev" onclick="detailSearchNav(-1)" title="上一处" disabled>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M9 8L6 5 3 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="dsearch-nav-btn" id="dsearch-next" onclick="detailSearchNav(1)" title="下一处" disabled>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M3 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="dsearch-clear-btn" id="dsearch-clear" onclick="clearDetailSearch()">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="detail-messages" id="detail-messages">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>加载对话...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

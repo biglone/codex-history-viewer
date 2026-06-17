@@ -1,0 +1,872 @@
+// Tauri v2 IPC - works with static HTML (no bundler)
+async function invoke(cmd, args) {
+  return window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+}
+
+// ===================================
+// State
+// ===================================
+const state = {
+  view: 'all',
+  page: 0,
+  pageSize: 30,
+  totalCount: 0,
+  searchQuery: '',
+  searchTimeout: null,
+  currentProject: null,
+  projectPage: 0,
+  detailOpen: false,
+  // Local filter state (session list)
+  localFilter: '',
+  // Detail in-session search state
+  detailSearchQuery: '',
+  detailMatches: [],      // Array of <mark> elements
+  detailMatchIndex: -1,   // Current active match index
+};
+
+// ===================================
+// Init
+// ===================================
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadTotalCount();
+  await loadAllSessions();
+  setupGlobalSearch();
+  setupLocalFilter();
+  setupDetailSearch();
+});
+
+async function loadTotalCount() {
+  try {
+    const count = await invoke('get_session_count');
+    state.totalCount = count;
+    document.getElementById('total-count').textContent = count;
+  } catch (e) {
+    console.error('Failed to load count:', e);
+  }
+}
+
+// ===================================
+// Views
+// ===================================
+function switchView(view) {
+  state.view = view;
+  state.page = 0;
+  state.currentProject = null;
+  clearLocalFilter();
+
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const navEl = document.getElementById('nav-' + view);
+  if (navEl) navEl.classList.add('active');
+
+  const searchBar = document.getElementById('search-bar');
+  const localFilterBar = document.getElementById('local-filter-bar');
+  const pageTitle = document.getElementById('page-title');
+
+  if (view === 'search') {
+    searchBar.style.display = 'flex';
+    localFilterBar.style.display = 'none';
+    pageTitle.style.display = 'none';
+    document.getElementById('search-input').focus();
+  } else {
+    searchBar.style.display = 'none';
+    pageTitle.style.display = 'block';
+    localFilterBar.style.display = view === 'projects' ? 'none' : 'flex';
+  }
+
+  const titles = { all: '全部会话', projects: '按项目浏览', search: '全局搜索' };
+  pageTitle.textContent = titles[view] || '会话';
+
+  if (view === 'all') loadAllSessions();
+  else if (view === 'projects') loadProjects();
+  else if (view === 'search') {
+    renderEmpty('请输入关键词开始全局搜索');
+    hidePagination();
+  }
+}
+
+async function refresh() {
+  await loadTotalCount();
+  if (state.view === 'all') await loadAllSessions();
+  else if (state.view === 'projects') await loadProjects();
+  else if (state.view === 'search' && state.searchQuery) await doSearch(state.searchQuery);
+}
+
+// ===================================
+// All Sessions
+// ===================================
+async function loadAllSessions() {
+  showLoading();
+  try {
+    const sessions = await invoke('get_sessions', {
+      page: state.page,
+      pageSize: state.pageSize,
+    });
+    renderSessions(sessions);
+    updatePagination();
+    // Re-apply local filter if active
+    if (state.localFilter) applyLocalFilter(state.localFilter);
+  } catch (e) {
+    renderError(e);
+  }
+}
+
+function renderSessions(sessions) {
+  const content = document.getElementById('content');
+  if (!sessions || sessions.length === 0) {
+    renderEmpty('暂无会话记录');
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'sessions-grid';
+  grid.id = 'sessions-grid';
+
+  sessions.forEach(s => {
+    const card = createSessionCard(s);
+    grid.appendChild(card);
+  });
+
+  content.innerHTML = '';
+  content.appendChild(grid);
+}
+
+function createSessionCard(s) {
+  const card = document.createElement('div');
+  card.className = 'session-card';
+  // Store searchable text as data attribute for local filter
+  card.dataset.searchText = [
+    s.title || '',
+    s.first_user_message || '',
+    s.preview || '',
+    s.cwd || '',
+    s.model || '',
+  ].join(' ').toLowerCase();
+  card.onclick = () => openDetail(s);
+
+  const time = formatTime(s.created_at_ms);
+  const projectName = getProjectName(s.cwd);
+  const preview = s.preview || s.first_user_message || '无内容';
+
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="card-title">${escHtml(s.title || s.first_user_message || '未命名会话')}</div>
+      <div class="card-time">${time}</div>
+    </div>
+    <div class="card-preview">${escHtml(preview.slice(0, 120))}</div>
+    <div class="card-footer">
+      ${s.model ? `<span class="tag tag-model">${escHtml(s.model)}</span>` : ''}
+      ${projectName ? `<span class="tag tag-project" title="${escHtml(s.cwd)}">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M1 3a1 1 0 011-1h2l1 1h4a1 1 0 011 1v4a1 1 0 01-1 1H2a1 1 0 01-1-1V3z" fill="currentColor"/>
+        </svg>
+        ${escHtml(projectName)}
+      </span>` : ''}
+      ${s.archived ? '<span class="tag tag-archived">归档</span>' : ''}
+    </div>
+  `;
+
+  return card;
+}
+
+// ===================================
+// Local Filter (client-side, current page only)
+// ===================================
+function setupLocalFilter() {
+  const input = document.getElementById('local-filter-input');
+  const clearBtn = document.getElementById('filter-clear');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    state.localFilter = q;
+
+    if (q) {
+      clearBtn.style.display = 'flex';
+      applyLocalFilter(q);
+    } else {
+      clearBtn.style.display = 'none';
+      clearLocalFilter();
+    }
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      input.value = '';
+      clearLocalFilter();
+      input.blur();
+    }
+  });
+}
+
+function applyLocalFilter(query) {
+  const grid = document.getElementById('sessions-grid');
+  if (!grid) return;
+
+  const cards = grid.querySelectorAll('.session-card');
+  let visibleCount = 0;
+
+  cards.forEach(card => {
+    const text = card.dataset.searchText || '';
+    if (text.includes(query)) {
+      card.classList.remove('filtered-hidden');
+      visibleCount++;
+    } else {
+      card.classList.add('filtered-hidden');
+    }
+  });
+
+  const countEl = document.getElementById('filter-count');
+  countEl.textContent = query ? `${visibleCount} / ${cards.length}` : '';
+}
+
+function clearLocalFilter() {
+  state.localFilter = '';
+  const input = document.getElementById('local-filter-input');
+  const clearBtn = document.getElementById('filter-clear');
+  const countEl = document.getElementById('filter-count');
+  if (input) input.value = '';
+  if (clearBtn) clearBtn.style.display = 'none';
+  if (countEl) countEl.textContent = '';
+
+  const grid = document.getElementById('sessions-grid');
+  if (grid) {
+    grid.querySelectorAll('.session-card.filtered-hidden').forEach(c => {
+      c.classList.remove('filtered-hidden');
+    });
+  }
+}
+
+// ===================================
+// Projects View
+// ===================================
+async function loadProjects() {
+  showLoading();
+  try {
+    const projects = await invoke('get_projects');
+    renderProjects(projects);
+    hidePagination();
+  } catch (e) {
+    renderError(e);
+  }
+}
+
+function renderProjects(projects) {
+  const content = document.getElementById('content');
+  if (!projects || projects.length === 0) {
+    renderEmpty('暂无项目');
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'projects-list';
+
+  projects.forEach(cwd => {
+    const item = document.createElement('div');
+    item.className = 'project-item';
+    item.onclick = () => openProjectDetail(cwd);
+    const name = getProjectName(cwd);
+
+    item.innerHTML = `
+      <div class="project-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 4a2 2 0 012-2h3l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V4z" fill="currentColor"/>
+        </svg>
+      </div>
+      <div class="project-info">
+        <div class="project-name">${escHtml(name)}</div>
+        <div class="project-path">${escHtml(cwd)}</div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="color:var(--text-muted)">
+        <path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+    list.appendChild(item);
+  });
+
+  content.innerHTML = '';
+  content.appendChild(list);
+}
+
+async function openProjectDetail(cwd) {
+  state.currentProject = cwd;
+  state.projectPage = 0;
+  state.view = 'project-detail';
+
+  // Show local filter bar for project sessions too
+  document.getElementById('local-filter-bar').style.display = 'flex';
+  document.getElementById('page-title').style.display = 'block';
+
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.id !== 'nav-projects') el.classList.remove('active');
+  });
+  document.getElementById('nav-projects').classList.add('active');
+
+  await loadProjectSessions();
+}
+
+async function loadProjectSessions() {
+  showLoading();
+  try {
+    const sessions = await invoke('get_sessions_by_project', {
+      cwd: state.currentProject,
+      page: state.projectPage,
+      pageSize: state.pageSize,
+    });
+
+    const content = document.getElementById('content');
+    content.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'section-header';
+    header.innerHTML = `
+      <button class="section-back-btn" onclick="switchView('projects')">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M8 2L4 6l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        返回项目列表
+      </button>
+      <span style="color:var(--text-muted)">·</span>
+      <span class="section-title">${escHtml(getProjectName(state.currentProject))}</span>
+    `;
+
+    const grid = document.createElement('div');
+    grid.className = 'sessions-grid';
+    grid.id = 'sessions-grid';
+    sessions.forEach(s => grid.appendChild(createSessionCard(s)));
+
+    content.appendChild(header);
+    content.appendChild(grid);
+    updateProjectPagination(sessions.length);
+
+    if (state.localFilter) applyLocalFilter(state.localFilter);
+  } catch (e) {
+    renderError(e);
+  }
+}
+
+function updateProjectPagination(count) {
+  const pag = document.getElementById('pagination');
+  if (state.projectPage === 0 && count < state.pageSize) {
+    pag.style.display = 'none';
+    return;
+  }
+  pag.style.display = 'flex';
+  document.getElementById('prev-btn').disabled = state.projectPage === 0;
+  document.getElementById('next-btn').disabled = count < state.pageSize;
+  document.getElementById('page-info').textContent = `第 ${state.projectPage + 1} 页`;
+  document.getElementById('prev-btn').onclick = () => { state.projectPage--; loadProjectSessions(); };
+  document.getElementById('next-btn').onclick = () => { state.projectPage++; loadProjectSessions(); };
+}
+
+// ===================================
+// Global Search
+// ===================================
+function setupGlobalSearch() {
+  const input = document.getElementById('search-input');
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      clearTimeout(state.searchTimeout);
+      doSearch(input.value.trim());
+    }
+  });
+  input.addEventListener('input', () => {
+    clearTimeout(state.searchTimeout);
+    state.searchTimeout = setTimeout(() => {
+      const q = input.value.trim();
+      if (q.length >= 2) doSearch(q);
+      else if (q.length === 0) {
+        renderEmpty('请输入关键词开始全局搜索');
+        hidePagination();
+      }
+    }, 400);
+  });
+}
+
+async function doSearch(query) {
+  if (!query) return;
+  state.searchQuery = query;
+  showLoading();
+  hidePagination();
+  try {
+    const results = await invoke('search_sessions', { query });
+    renderSearchResults(results, query);
+  } catch (e) {
+    renderError(e);
+  }
+}
+
+function renderSearchResults(results, query) {
+  const content = document.getElementById('content');
+  if (!results || results.length === 0) {
+    renderEmpty(`没有找到包含 "${escHtml(query)}" 的会话`);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'search-results';
+
+  const countEl = document.createElement('div');
+  countEl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-bottom:4px;';
+  countEl.textContent = `找到 ${results.length} 个结果`;
+  list.appendChild(countEl);
+
+  results.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'search-result-card';
+    card.onclick = () => openDetail(r.session);
+
+    const snippet = r.matched_message || r.session.preview || r.session.first_user_message || '';
+    const highlightedSnippet = highlightQuery(escHtml(snippet.slice(0, 200)), query);
+    const time = formatTime(r.session.created_at_ms);
+    const projectName = getProjectName(r.session.cwd);
+
+    card.innerHTML = `
+      <div class="result-title">${escHtml(r.session.title || r.session.first_user_message || '未命名')}</div>
+      <div class="result-snippet">${highlightedSnippet}</div>
+      <div class="result-meta">
+        <span class="tag tag-model" style="font-size:10px">${time}</span>
+        ${projectName ? `<span class="tag tag-project" style="font-size:10px">${escHtml(projectName)}</span>` : ''}
+        ${r.session.model ? `<span class="tag tag-model" style="font-size:10px">${escHtml(r.session.model)}</span>` : ''}
+      </div>
+    `;
+    list.appendChild(card);
+  });
+
+  content.innerHTML = '';
+  content.appendChild(list);
+}
+
+function highlightQuery(text, query) {
+  if (!query) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(escaped, 'gi'), match => `<mark>${match}</mark>`);
+}
+
+// ===================================
+// Detail Panel
+// ===================================
+async function openDetail(session) {
+  state.detailOpen = true;
+  clearDetailSearch();
+
+  const panel = document.getElementById('detail-panel');
+  const overlay = document.getElementById('detail-overlay');
+  const messagesEl = document.getElementById('detail-messages');
+  const titleEl = document.getElementById('detail-title');
+  const metaEl = document.getElementById('detail-meta');
+
+  titleEl.textContent = session.title || session.first_user_message || '未命名会话';
+  const projectName = getProjectName(session.cwd);
+  metaEl.innerHTML = `
+    ${session.model ? `<span class="tag tag-model">${escHtml(session.model)}</span>` : ''}
+    ${projectName ? `<span class="tag tag-project">${escHtml(projectName)}</span>` : ''}
+    <span class="tag" style="background:var(--bg-active);color:var(--text-muted)">${formatTime(session.created_at_ms)}</span>
+  `;
+
+  panel.classList.add('visible');
+  overlay.classList.add('visible');
+
+  messagesEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>加载对话内容...</p></div>';
+
+  try {
+    const messages = await invoke('get_session_messages', { sessionId: session.id });
+    renderMessages(messages, messagesEl);
+  } catch (e) {
+    messagesEl.innerHTML = `<div class="empty-state"><p style="color:var(--red)">加载失败: ${escHtml(String(e))}</p></div>`;
+  }
+}
+
+function closeDetail() {
+  state.detailOpen = false;
+  clearDetailSearch();
+  document.getElementById('detail-panel').classList.remove('visible');
+  document.getElementById('detail-overlay').classList.remove('visible');
+}
+
+function renderMessages(messages, container) {
+  if (!messages || messages.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>暂无对话内容</p></div>';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  messages.forEach(msg => {
+    if (msg.role !== 'user' && msg.role !== 'assistant') return;
+
+    const el = document.createElement('div');
+    el.className = `message ${msg.role}`;
+
+    const roleLabel = msg.role === 'user' ? '你' : 'Codex';
+    const roleInitial = msg.role === 'user' ? 'U' : 'AI';
+    const timeStr = msg.timestamp ? formatDetailTime(msg.timestamp) : '';
+
+    el.innerHTML = `
+      <div class="message-role">
+        <div class="role-icon">${roleInitial}</div>
+        ${roleLabel}
+      </div>
+      <div class="message-bubble">${formatMessageContent(msg.content)}</div>
+      ${timeStr ? `<div class="message-time">${timeStr}</div>` : ''}
+    `;
+
+    container.appendChild(el);
+  });
+
+  container.scrollTop = 0;
+}
+
+function formatMessageContent(content) {
+  if (!content) return '';
+  let html = escHtml(content);
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code>${code.trim()}</code></pre>`
+  );
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+// ===================================
+// Detail In-Session Search
+// ===================================
+function setupDetailSearch() {
+  const input = document.getElementById('detail-search-input');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    state.detailSearchQuery = q;
+    if (q.length >= 1) {
+      runDetailSearch(q);
+    } else {
+      clearDetailSearchHighlights();
+      updateDetailSearchCount(0, 0);
+      updateDetailNavBtns();
+    }
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      detailSearchNav(e.shiftKey ? -1 : 1);
+    }
+    if (e.key === 'Escape') {
+      clearDetailSearch();
+    }
+  });
+}
+
+function runDetailSearch(query) {
+  clearDetailSearchHighlights();
+  state.detailMatches = [];
+  state.detailMatchIndex = -1;
+
+  if (!query) {
+    updateDetailSearchCount(0, 0);
+    updateDetailNavBtns();
+    return;
+  }
+
+  const container = document.getElementById('detail-messages');
+  if (!container) return;
+
+  const bubbles = container.querySelectorAll('.message-bubble');
+  const queryLower = query.toLowerCase();
+
+  bubbles.forEach(bubble => {
+    // Only search in text nodes (avoid searching inside <pre> code blocks)
+    highlightTextInElement(bubble, queryLower, query);
+  });
+
+  // Collect all marks
+  state.detailMatches = Array.from(container.querySelectorAll('.search-mark'));
+  const total = state.detailMatches.length;
+
+  if (total > 0) {
+    state.detailMatchIndex = 0;
+    activateMatch(0);
+  }
+
+  updateDetailSearchCount(total > 0 ? 1 : 0, total);
+  updateDetailNavBtns();
+}
+
+function highlightTextInElement(el, queryLower, query) {
+  // Walk text nodes, skip <pre> and <code> blocks
+  const walker = document.createTreeWalker(
+    el,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        // Skip nodes inside <pre> or <code>
+        let parent = node.parentElement;
+        while (parent && parent !== el) {
+          if (parent.tagName === 'PRE' || parent.tagName === 'CODE') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          parent = parent.parentElement;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+
+  const nodes = [];
+  let node;
+  while ((node = walker.nextNode())) nodes.push(node);
+
+  nodes.forEach(textNode => {
+    const text = textNode.textContent;
+    const textLower = text.toLowerCase();
+    if (!textLower.includes(queryLower)) return;
+
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let idx;
+    const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      // Text before match
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+      // Highlight span
+      const mark = document.createElement('span');
+      mark.className = 'search-mark';
+      mark.textContent = match[0];
+      fragment.appendChild(mark);
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+
+    textNode.parentNode.replaceChild(fragment, textNode);
+  });
+}
+
+function activateMatch(index) {
+  const matches = state.detailMatches;
+  if (!matches.length) return;
+
+  // Deactivate all
+  matches.forEach(m => {
+    m.classList.remove('active-mark');
+    m.closest('.message-bubble')?.classList.remove('has-active-match');
+  });
+
+  const target = matches[index];
+  if (!target) return;
+
+  target.classList.add('active-mark');
+  target.closest('.message-bubble')?.classList.add('has-active-match');
+
+  // Scroll into view
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  updateDetailSearchCount(index + 1, matches.length);
+}
+
+function detailSearchNav(direction) {
+  const total = state.detailMatches.length;
+  if (total === 0) return;
+
+  let next = state.detailMatchIndex + direction;
+  if (next < 0) next = total - 1;
+  if (next >= total) next = 0;
+
+  state.detailMatchIndex = next;
+  activateMatch(next);
+  updateDetailNavBtns();
+}
+
+function clearDetailSearchHighlights() {
+  const container = document.getElementById('detail-messages');
+  if (!container) return;
+
+  // Replace all <span class="search-mark"> with their text content
+  container.querySelectorAll('.search-mark').forEach(mark => {
+    const text = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(text, mark);
+  });
+
+  // Normalize text nodes
+  container.querySelectorAll('.message-bubble').forEach(b => {
+    b.normalize();
+    b.classList.remove('has-active-match');
+  });
+
+  state.detailMatches = [];
+  state.detailMatchIndex = -1;
+}
+
+function clearDetailSearch() {
+  const input = document.getElementById('detail-search-input');
+  if (input) input.value = '';
+  state.detailSearchQuery = '';
+  clearDetailSearchHighlights();
+  updateDetailSearchCount(0, 0);
+  updateDetailNavBtns();
+}
+
+function updateDetailSearchCount(current, total) {
+  const el = document.getElementById('detail-search-count');
+  if (!el) return;
+  if (total === 0 && state.detailSearchQuery) {
+    el.textContent = '无匹配';
+    el.style.color = 'var(--red)';
+  } else if (total === 0) {
+    el.textContent = '';
+    el.style.color = '';
+  } else {
+    el.textContent = `${current} / ${total}`;
+    el.style.color = '';
+  }
+}
+
+function updateDetailNavBtns() {
+  const total = state.detailMatches.length;
+  document.getElementById('dsearch-prev').disabled = total === 0;
+  document.getElementById('dsearch-next').disabled = total === 0;
+}
+
+// ===================================
+// Pagination
+// ===================================
+function updatePagination() {
+  const pag = document.getElementById('pagination');
+  const totalPages = Math.ceil(state.totalCount / state.pageSize);
+
+  if (totalPages <= 1) {
+    pag.style.display = 'none';
+    return;
+  }
+
+  pag.style.display = 'flex';
+  document.getElementById('prev-btn').disabled = state.page === 0;
+  document.getElementById('next-btn').disabled = state.page >= totalPages - 1;
+  document.getElementById('page-info').textContent = `第 ${state.page + 1} / ${totalPages} 页`;
+  document.getElementById('prev-btn').onclick = prevPage;
+  document.getElementById('next-btn').onclick = nextPage;
+}
+
+function hidePagination() {
+  document.getElementById('pagination').style.display = 'none';
+}
+
+function prevPage() {
+  if (state.page > 0) { state.page--; loadAllSessions(); scrollToTop(); }
+}
+
+function nextPage() {
+  state.page++;
+  loadAllSessions();
+  scrollToTop();
+}
+
+function scrollToTop() {
+  document.getElementById('content').scrollTop = 0;
+}
+
+// ===================================
+// Helpers
+// ===================================
+function showLoading() {
+  document.getElementById('content').innerHTML =
+    '<div class="loading-state"><div class="spinner"></div><p>加载中...</p></div>';
+}
+
+function renderEmpty(msg) {
+  document.getElementById('content').innerHTML = `
+    <div class="empty-state">
+      <svg class="empty-state-icon" width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 24h16M24 16v16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <p>${escHtml(msg)}</p>
+    </div>
+  `;
+}
+
+function renderError(e) {
+  document.getElementById('content').innerHTML = `
+    <div class="empty-state">
+      <p style="color:var(--red)">错误: ${escHtml(String(e))}</p>
+    </div>
+  `;
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getProjectName(cwd) {
+  if (!cwd) return '';
+  const parts = cwd.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts[parts.length - 1] || cwd;
+}
+
+function formatTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const now = new Date();
+  const diff = now - d;
+  const days = Math.floor(diff / 86400000);
+  if (days === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  if (days === 1) return '昨天';
+  if (days < 7) return `${days}天前`;
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}
+
+function formatDetailTime(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+
+// ===================================
+// Keyboard Shortcuts
+// ===================================
+document.addEventListener('keydown', (e) => {
+  // Cmd/Ctrl + F
+  if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+    e.preventDefault();
+    if (state.detailOpen) {
+      // Focus detail search when panel is open
+      const detailInput = document.getElementById('detail-search-input');
+      detailInput.focus();
+      detailInput.select();
+    } else {
+      // Focus local filter when viewing session list
+      const localInput = document.getElementById('local-filter-input');
+      if (localInput && document.getElementById('local-filter-bar').style.display !== 'none') {
+        localInput.focus();
+        localInput.select();
+      }
+    }
+    return;
+  }
+
+  // Cmd/Ctrl + G - global search
+  if ((e.metaKey || e.ctrlKey) && e.key === 'g') {
+    e.preventDefault();
+    switchView('search');
+    return;
+  }
+
+  if (e.key === 'Escape') {
+    if (state.detailSearchQuery) {
+      clearDetailSearch();
+    } else if (state.detailOpen) {
+      closeDetail();
+    }
+  }
+});
