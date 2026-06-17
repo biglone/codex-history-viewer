@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'           # 推送 v1.0.0 这样的 tag 时触发
+  workflow_dispatch:   # 也支持手动触发
+
+permissions:
+  contents: write      # 需要写权限来创建 Release
+
+jobs:
+  build-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'   # Apple Silicon
+            label: 'macOS-arm64'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'    # Intel Mac
+            label: 'macOS-x64'
+          - platform: windows-latest
+            args: ''
+            label: 'Windows'
+          - platform: ubuntu-22.04
+            args: ''
+            label: 'Linux'
+
+    runs-on: ${{ matrix.platform }}
+    name: Build (${{ matrix.label }})
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Linux 系统依赖
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Codex History Viewer ${{ github.ref_name }}'
+          releaseBody: |
+            ## Codex History Viewer ${{ github.ref_name }}
+
+            ### 下载说明
+            - **macOS (Apple Silicon)**: 下载 `*_aarch64.dmg`
+            - **macOS (Intel)**: 下载 `*_x64.dmg`
+            - **Windows**: 下载 `*_x64-setup.exe` 或 `*_x64_en-US.msi`
+            - **Linux**: 下载 `*.AppImage` 或 `*.deb`
+
+            ### 使用说明
+            需要先安装 [Codex Desktop](https://openai.com/codex)，本工具读取 `~/.codex/` 下的本地数据。
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
