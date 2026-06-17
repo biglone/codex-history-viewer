@@ -1074,6 +1074,18 @@ const THEMES = [
     desc: '北欧灰蓝，清雅克制',
     dots: ['#5e81ac', '#88c0d0', '#2e3044'],
   },
+  {
+    id: 'light',
+    name: '清晨浅色',
+    desc: '纯净浅色，护眼清爽',
+    dots: ['#6366f1', '#8b5cf6', '#f0f1f6'],
+  },
+  {
+    id: 'dark',
+    name: '极夜纯黑',
+    desc: '纯黑背景，极简深邃',
+    dots: ['#a855f7', '#c084fc', '#111111'],
+  },
 ];
 
 function initTheme() {

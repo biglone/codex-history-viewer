@@ -1325,6 +1325,64 @@ html, body {
   --purple: #88c0d0;
 }
 
+/* Theme: Light */
+[data-theme="light"] {
+  --bg-base: #f4f5f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f0f1f6;
+  --bg-hover: #e8eaf2;
+  --bg-active: #dde0ee;
+
+  --border: rgba(0,0,0,0.08);
+  --border-hover: rgba(0,0,0,0.15);
+  --border-active: rgba(99,102,241,0.45);
+
+  --text-primary: #1a1c2e;
+  --text-secondary: #4a4f72;
+  --text-muted: #9499b8;
+  --text-accent: #4f52c8;
+
+  --accent: #6366f1;
+  --accent-soft: rgba(99,102,241,0.10);
+  --accent-glow: rgba(99,102,241,0.18);
+  --purple: #8b5cf6;
+  --green: #059669;
+  --amber: #d97706;
+  --red: #dc2626;
+  --blue: #2563eb;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow: 0 4px 16px rgba(0,0,0,0.10);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.14);
+}
+
+/* Theme: Pure Dark */
+[data-theme="dark"] {
+  --bg-base: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-elevated: #111111;
+  --bg-hover: #1a1a1a;
+  --bg-active: #222222;
+
+  --border: rgba(255,255,255,0.06);
+  --border-hover: rgba(255,255,255,0.12);
+  --border-active: rgba(168,85,247,0.5);
+
+  --text-primary: #f5f5f5;
+  --text-secondary: #888888;
+  --text-muted: #444444;
+  --text-accent: #c084fc;
+
+  --accent: #a855f7;
+  --accent-soft: rgba(168,85,247,0.12);
+  --accent-glow: rgba(168,85,247,0.22);
+  --purple: #c084fc;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.6);
+  --shadow: 0 4px 16px rgba(0,0,0,0.7);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.8);
+}
+
 /* ===================================
    Theme Picker UI
 =================================== */
