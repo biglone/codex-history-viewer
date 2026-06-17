@@ -280,6 +280,35 @@ html, body {
 
 .icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 
+/* Text + Icon button (e.g. Refresh) */
+.text-icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.text-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.text-icon-btn.spinning svg {
+  animation: spin 0.6s linear infinite;
+}
+
+
 /* ===================================
    Content
 =================================== */

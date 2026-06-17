@@ -85,10 +85,16 @@ function switchView(view) {
 }
 
 async function refresh() {
-  await loadTotalCount();
-  if (state.view === 'all') await loadAllSessions();
-  else if (state.view === 'projects') await loadProjects();
-  else if (state.view === 'search' && state.searchQuery) await doSearch(state.searchQuery);
+  const btn = document.getElementById('refresh-btn');
+  if (btn) btn.classList.add('spinning');
+  try {
+    await loadTotalCount();
+    if (state.view === 'all') await loadAllSessions();
+    else if (state.view === 'projects') await loadProjects();
+    else if (state.view === 'search' && state.searchQuery) await doSearch(state.searchQuery);
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+  }
 }
 
 // ===================================
