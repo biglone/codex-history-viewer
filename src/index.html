@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="sync-panel.css" />
 </head>
 <body>
   <div class="app">
@@ -52,6 +53,16 @@
             <path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
           </svg>
           全局搜索
+        </button>
+        <button class="nav-item" id="nav-sync" onclick="openSyncPanel()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M13.5 2.5v3.5H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+            <path d="M2.5 13.5V10H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+            <path d="M13.5 6A6 6 0 0 0 4.1 3.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+            <path d="M2.5 10a6 6 0 0 0 9.4 2.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+          </svg>
+          云端同步
+          <span class="nav-badge sync-badge" id="sync-badge" style="display:none"></span>
         </button>
       </nav>
 
@@ -249,6 +260,106 @@
       </button>
     </div>
     <div class="theme-list" id="theme-list"></div>
+  </div>
+
+  <!-- Sync Panel -->
+  <div class="sync-overlay" id="sync-overlay" onclick="closeSyncPanel()"></div>
+  <div class="sync-panel" id="sync-panel">
+    <div class="sync-panel-header">
+      <div class="sync-panel-title">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M13.5 2.5v3.5H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2.5 13.5V10H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M13.5 6A6 6 0 0 0 4.1 3.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M2.5 10a6 6 0 0 0 9.4 2.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        云端同步
+      </div>
+      <button class="icon-btn" onclick="closeSyncPanel()">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M11 3L3 11M3 3l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- 设置区 -->
+    <div class="sync-section">
+      <div class="sync-section-title">服务器配置</div>
+      <div class="sync-form">
+        <label class="sync-label">服务器地址</label>
+        <input class="sync-input" id="sync-server-url" type="text"
+          placeholder="http://localhost:3456" autocomplete="off"/>
+
+        <label class="sync-label">API Token</label>
+        <input class="sync-input" id="sync-api-token" type="password"
+          placeholder="your-secret-token" autocomplete="off"/>
+
+        <label class="sync-label">设备名称</label>
+        <input class="sync-input" id="sync-device-name" type="text"
+          placeholder="我的 MacBook" autocomplete="off"/>
+
+        <div class="sync-device-id-row">
+          <span class="sync-label">设备 ID</span>
+          <span class="sync-device-id" id="sync-device-id">—</span>
+        </div>
+      </div>
+      <div class="sync-actions">
+        <button class="sync-btn sync-btn-secondary" id="sync-test-btn" onclick="syncTestConnection()">
+          测试连接
+        </button>
+        <button class="sync-btn sync-btn-primary" onclick="syncSaveConfig()">
+          保存配置
+        </button>
+      </div>
+      <div class="sync-test-result" id="sync-test-result"></div>
+    </div>
+
+    <!-- 同步操作区 -->
+    <div class="sync-section">
+      <div class="sync-section-title">同步操作</div>
+      <div class="sync-stat-row" id="sync-stat-row">
+        <div class="sync-stat">
+          <div class="sync-stat-num" id="sync-local-count">—</div>
+          <div class="sync-stat-label">本地会话</div>
+        </div>
+        <div class="sync-stat-arrow">→</div>
+        <div class="sync-stat">
+          <div class="sync-stat-num" id="sync-server-count">—</div>
+          <div class="sync-stat-label">服务端会话</div>
+        </div>
+        <div class="sync-stat-arrow">←</div>
+        <div class="sync-stat">
+          <div class="sync-stat-num" id="sync-pending-count">—</div>
+          <div class="sync-stat-label">待同步</div>
+        </div>
+      </div>
+      <div class="sync-progress-wrap" id="sync-progress-wrap" style="display:none">
+        <div class="sync-progress-bar">
+          <div class="sync-progress-fill" id="sync-progress-fill"></div>
+        </div>
+        <div class="sync-progress-text" id="sync-progress-text">准备中...</div>
+      </div>
+      <div class="sync-actions">
+        <button class="sync-btn sync-btn-secondary" id="sync-check-btn" onclick="syncCheck()">
+          检查差异
+        </button>
+        <button class="sync-btn sync-btn-primary" id="sync-upload-btn" onclick="syncUpload()">
+          ↑ 上传到服务端
+        </button>
+      </div>
+      <div class="sync-last-time" id="sync-last-time"></div>
+    </div>
+
+    <!-- 同步日志 -->
+    <div class="sync-section sync-log-section">
+      <div class="sync-section-title">
+        同步日志
+        <button class="sync-log-clear" onclick="syncClearLog()">清空</button>
+      </div>
+      <div class="sync-log" id="sync-log">
+        <div class="sync-log-empty">暂无同步记录</div>
+      </div>
+    </div>
   </div>
 
   <script src="main.js"></script>

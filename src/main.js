@@ -1219,3 +1219,283 @@ function closeThemePicker() {
   document.getElementById('theme-overlay').classList.remove('visible');
   document.getElementById('theme-picker').classList.remove('visible');
 }
+
+// ===================================
+// Sync Panel
+// ===================================
+const syncState = {
+  config: null,
+  isSyncing: false,
+  toUpload: [],   // 需要上传的 session IDs
+};
+
+async function openSyncPanel() {
+  document.getElementById('sync-overlay').classList.add('visible');
+  document.getElementById('sync-panel').classList.add('visible');
+  await syncLoadConfig();
+}
+
+function closeSyncPanel() {
+  document.getElementById('sync-overlay').classList.remove('visible');
+  document.getElementById('sync-panel').classList.remove('visible');
+}
+
+async function syncLoadConfig() {
+  try {
+    const config = await invoke('get_sync_config');
+    syncState.config = config;
+    document.getElementById('sync-server-url').value = config.server_url || '';
+    document.getElementById('sync-api-token').value = config.api_token || '';
+    document.getElementById('sync-device-name').value = config.device_name || '';
+    document.getElementById('sync-device-id').textContent = config.device_id || '—';
+    if (config.last_sync_ms) {
+      document.getElementById('sync-last-time').textContent =
+        `上次同步：${formatDetailTime(new Date(config.last_sync_ms).toISOString())}`;
+    }
+    // 加载本地会话数量
+    const ids = await invoke('get_local_session_ids');
+    document.getElementById('sync-local-count').textContent = ids.length;
+  } catch (e) {
+    syncLog('error', `加载配置失败：${e}`);
+  }
+}
+
+async function syncSaveConfig() {
+  const config = {
+    server_url: document.getElementById('sync-server-url').value.trim().replace(/\/$/, ''),
+    api_token: document.getElementById('sync-api-token').value.trim(),
+    device_id: syncState.config?.device_id || '',
+    device_name: document.getElementById('sync-device-name').value.trim() || '未命名设备',
+    last_sync_ms: syncState.config?.last_sync_ms || 0,
+  };
+  try {
+    await invoke('save_sync_config', { config });
+    syncState.config = config;
+    syncLog('ok', '配置已保存');
+  } catch (e) {
+    syncLog('error', `保存失败：${e}`);
+  }
+}
+
+async function syncTestConnection() {
+  const url = document.getElementById('sync-server-url').value.trim().replace(/\/$/, '');
+  const token = document.getElementById('sync-api-token').value.trim();
+  const resultEl = document.getElementById('sync-test-result');
+  const btn = document.getElementById('sync-test-btn');
+
+  if (!url) {
+    resultEl.innerHTML = '<span class="sync-test-fail">⚠ 请填写服务器地址</span>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '连接中...';
+  resultEl.innerHTML = '';
+
+  try {
+    const res = await fetch(`${url}/api/sync/health`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      resultEl.innerHTML = `<span class="sync-test-ok">✓ 连接成功（${new Date(data.timestamp).toLocaleTimeString('zh-CN')}）</span>`;
+      syncLog('ok', `服务器连接成功：${url}`);
+      // 顺便拉取服务端统计
+      try {
+        const statsRes = await fetch(`${url}/api/sync/stats`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (statsRes.ok) {
+          const stats = await statsRes.json();
+          document.getElementById('sync-server-count').textContent = stats.total_sessions;
+        }
+      } catch (_) {}
+    } else {
+      resultEl.innerHTML = `<span class="sync-test-fail">✗ 服务器返回错误：${data.error || res.status}</span>`;
+    }
+  } catch (e) {
+    resultEl.innerHTML = `<span class="sync-test-fail">✗ 连接失败：${e.message || e}</span>`;
+    syncLog('error', `连接失败：${e.message || e}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '测试连接';
+  }
+}
+
+async function syncCheck() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先填写并保存服务器配置');
+    return;
+  }
+
+  const btn = document.getElementById('sync-check-btn');
+  btn.disabled = true;
+  btn.textContent = '检查中...';
+
+  try {
+    // 获取本地所有 session ID + updated_at_ms
+    const localIds = await invoke('get_local_session_ids');
+    document.getElementById('sync-local-count').textContent = localIds.length;
+
+    // 发送给服务端做 diff 对比
+    const res = await fetch(`${cfg.server_url}/api/sync/check`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.api_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        device_id: cfg.device_id,
+        local_ids: localIds,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const diff = await res.json();
+    syncState.toUpload = diff.to_upload || [];
+
+    document.getElementById('sync-server-count').textContent = diff.server_total;
+    document.getElementById('sync-pending-count').textContent =
+      `↑${diff.to_upload.length} ↓${diff.to_download.length}`;
+
+    syncLog('ok', `差异检查完成：需上传 ${diff.to_upload.length} 条，可下载 ${diff.to_download.length} 条`);
+  } catch (e) {
+    syncLog('error', `检查失败：${e.message || e}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '检查差异';
+  }
+}
+
+async function syncUpload() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先填写并保存服务器配置');
+    return;
+  }
+  if (syncState.isSyncing) return;
+
+  // 如果还没检查过，先自动检查一次
+  if (syncState.toUpload.length === 0) {
+    await syncCheck();
+    if (syncState.toUpload.length === 0) {
+      syncLog('ok', '没有需要上传的会话，已是最新');
+      return;
+    }
+  }
+
+  syncState.isSyncing = true;
+  const btn = document.getElementById('sync-upload-btn');
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  const progressWrap = document.getElementById('sync-progress-wrap');
+  const progressFill = document.getElementById('sync-progress-fill');
+  const progressText = document.getElementById('sync-progress-text');
+  progressWrap.style.display = 'block';
+
+  const ids = [...syncState.toUpload];
+  const batchSize = 20; // 每批 20 条（Rust 最多 50，留余量）
+  let uploaded = 0;
+  let failed = 0;
+
+  syncLog('info', `开始上传，共 ${ids.length} 条...`);
+
+  try {
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batchIds = ids.slice(i, i + batchSize);
+
+      // 从 Rust 获取本批次完整数据
+      const payloads = await invoke('get_sessions_for_upload', { sessionIds: batchIds });
+
+      // 为每条 session 附加设备信息
+      const body = {
+        sessions: payloads.map(p => ({
+          session: {
+            ...p.session,
+            device_id: cfg.device_id,
+            device_name: cfg.device_name,
+            platform: 'mac',
+          },
+          messages: p.messages,
+        })),
+      };
+
+      const res = await fetch(`${cfg.server_url}/api/sessions/upload-batch`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cfg.api_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const result = await res.json();
+      uploaded += result.uploaded || 0;
+      failed += result.failed || 0;
+
+      // 更新进度
+      const progress = Math.round(((i + batchIds.length) / ids.length) * 100);
+      progressFill.style.width = `${progress}%`;
+      progressText.textContent = `已上传 ${uploaded} / ${ids.length}（失败 ${failed}）`;
+      syncLog('ok', `批次 ${Math.floor(i / batchSize) + 1}：上传 ${result.uploaded} 条，失败 ${result.failed} 条`);
+    }
+
+    // 更新最后同步时间
+    const newConfig = { ...cfg, last_sync_ms: Date.now() };
+    await invoke('save_sync_config', { config: newConfig });
+    syncState.config = newConfig;
+    document.getElementById('sync-last-time').textContent =
+      `上次同步：${formatDetailTime(new Date().toISOString())}`;
+    syncState.toUpload = [];
+    document.getElementById('sync-pending-count').textContent = '0';
+
+    syncLog('ok', `✓ 上传完成：成功 ${uploaded} 条，失败 ${failed} 条`);
+  } catch (e) {
+    syncLog('error', `上传中断：${e.message || e}`);
+  } finally {
+    syncState.isSyncing = false;
+    btn.disabled = false;
+    btn.textContent = '↑ 上传到服务端';
+    setTimeout(() => { progressWrap.style.display = 'none'; }, 3000);
+  }
+}
+
+// 同步日志输出
+function syncLog(type, msg) {
+  const logEl = document.getElementById('sync-log');
+  const empty = logEl.querySelector('.sync-log-empty');
+  if (empty) empty.remove();
+
+  const icons = { ok: '✓', error: '✗', warn: '⚠', info: '·' };
+  const entry = document.createElement('div');
+  entry.className = `sync-log-entry sync-log-${type}`;
+  entry.innerHTML = `
+    <span class="sync-log-icon">${icons[type] || '·'}</span>
+    <span class="sync-log-msg">${escHtml(msg)}</span>
+    <span class="sync-log-time">${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+  `;
+  logEl.insertBefore(entry, logEl.firstChild);
+
+  // 最多保留 50 条
+  const entries = logEl.querySelectorAll('.sync-log-entry');
+  if (entries.length > 50) entries[entries.length - 1].remove();
+}
+
+function syncClearLog() {
+  document.getElementById('sync-log').innerHTML = '<div class="sync-log-empty">暂无同步记录</div>';
+}
