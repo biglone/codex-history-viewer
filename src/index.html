@@ -176,11 +176,23 @@
           <h2 class="detail-title" id="detail-title">会话详情</h2>
           <div class="detail-meta" id="detail-meta"></div>
         </div>
-        <button class="icon-btn close-btn" onclick="closeDetail()">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
+        <div class="detail-header-actions">
+          <button class="icon-btn" id="detail-fullscreen-btn" onclick="toggleDetailFullscreen()" title="全屏查看" data-fullscreen="0">
+            <!-- expand icon -->
+            <svg class="icon-expand" width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <!-- shrink icon -->
+            <svg class="icon-shrink" width="15" height="15" viewBox="0 0 16 16" fill="none" style="display:none">
+              <path d="M6 2v4H2M10 2v4h4M2 10h4v4M14 10h-4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="icon-btn close-btn" onclick="closeDetail()">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- 会话内搜索栏 -->

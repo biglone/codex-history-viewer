@@ -644,8 +644,44 @@ async function openDetail(session) {
 function closeDetail() {
   state.detailOpen = false;
   clearDetailSearch();
-  document.getElementById('detail-panel').classList.remove('visible');
+  // Also exit fullscreen if active
+  const panel = document.getElementById('detail-panel');
+  panel.classList.remove('visible', 'fullscreen');
   document.getElementById('detail-overlay').classList.remove('visible');
+}
+
+function toggleDetailFullscreen() {
+  const panel = document.getElementById('detail-panel');
+  const overlay = document.getElementById('detail-overlay');
+  const btn = document.getElementById('detail-fullscreen-btn');
+  const isFullscreen = panel.classList.toggle('fullscreen');
+  // In fullscreen mode, hide overlay (clicking outside shouldn't close)
+  overlay.classList.toggle('fullscreen-hidden', isFullscreen);
+  // Update icon
+  if (btn) {
+    btn.setAttribute('data-fullscreen', isFullscreen ? '1' : '0');
+    btn.querySelector('.icon-expand').style.display = isFullscreen ? 'none' : '';
+    btn.querySelector('.icon-shrink').style.display = isFullscreen ? '' : 'none';
+    btn.title = isFullscreen ? '退出全屏' : '全屏查看';
+  }
+}
+
+function mergeMessages(messages) {
+  // Merge consecutive assistant messages into one (multi-paragraph answers to a single question)
+  const merged = [];
+  for (const msg of messages) {
+    if (msg.role !== 'user' && msg.role !== 'assistant') continue;
+    const last = merged[merged.length - 1];
+    if (last && last.role === 'assistant' && msg.role === 'assistant') {
+      // Append content with a separator
+      last.content = last.content + '\n\n' + msg.content;
+      // Keep the latest timestamp
+      if (msg.timestamp) last.timestamp = msg.timestamp;
+    } else {
+      merged.push({ role: msg.role, content: msg.content, timestamp: msg.timestamp });
+    }
+  }
+  return merged;
 }
 
 function renderMessages(messages, container) {
@@ -656,13 +692,13 @@ function renderMessages(messages, container) {
 
   container.innerHTML = '';
 
-  messages.forEach(msg => {
-    if (msg.role !== 'user' && msg.role !== 'assistant') return;
+  const merged = mergeMessages(messages);
 
+  merged.forEach(msg => {
     const el = document.createElement('div');
     el.className = `message ${msg.role}`;
 
-    const roleLabel = msg.role === 'user' ? '你' : 'Codex';
+    const roleLabel = msg.role === 'user' ? '你' : 'AI CODEX';
     const roleInitial = msg.role === 'user' ? 'U' : 'AI';
     const timeStr = msg.timestamp ? formatDetailTime(msg.timestamp) : '';
 
@@ -1052,6 +1088,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.detailSearchQuery) {
       clearDetailSearch();
+    } else if (document.getElementById('detail-panel')?.classList.contains('fullscreen')) {
+      // Exit fullscreen first before closing
+      toggleDetailFullscreen();
     } else if (state.detailOpen) {
       closeDetail();
     } else {

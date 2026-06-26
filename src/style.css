@@ -931,6 +931,46 @@ html, body {
 
 .close-btn { flex-shrink: 0; }
 
+/* Fullscreen detail panel */
+.detail-panel.fullscreen {
+  left: 0;
+  width: 100%;
+  border-left: none;
+}
+
+.detail-panel.fullscreen .detail-messages {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.detail-panel.fullscreen .detail-header {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.detail-panel.fullscreen .detail-search-bar {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.detail-overlay.fullscreen-hidden {
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+.detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+
 .detail-messages {
   flex: 1;
   overflow-y: auto;
