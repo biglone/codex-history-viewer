@@ -1,0 +1,20 @@
+{
+  "name": "codex-sync-server",
+  "version": "1.0.0",
+  "description": "Codex History 会话同步服务端",
+  "type": "module",
+  "main": "src/app.js",
+  "scripts": {
+    "dev": "node --watch src/app.js",
+    "start": "node src/app.js",
+    "db:init": "node src/db/init.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/multipart": "^8.3.0",
+    "fastify": "^4.28.1",
+    "pg": "^8.12.0",
+    "pino-pretty": "^13.1.3",
+    "uuid": "^10.0.0"
+  }
+}

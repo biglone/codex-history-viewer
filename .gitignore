@@ -3,6 +3,7 @@ src-tauri/target/
 
 # Node.js
 node_modules/
+server/node_modules/
 
 # Tauri generated files
 src-tauri/gen/
@@ -20,6 +21,10 @@ Thumbs.db
 # Env
 .env
 .env.local
+server/.env
 
 # Logs
 *.log
+
+# Server runtime data
+server/storage/
