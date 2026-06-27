@@ -33,6 +33,8 @@ const PORT = parseInt(process.env.PORT || '3456');
 const STORAGE_DIR = process.env.STORAGE_DIR || './storage';
 
 const fastify = Fastify({
+  // 最大请求体 50MB，应对大会话批量上传
+  bodyLimit: 50 * 1024 * 1024,
   logger: {
     transport: {
       target: 'pino-pretty',
@@ -48,14 +50,6 @@ await fastify.register(cors, {
   allowedHeaders: ['Content-Type', 'Authorization'],
 });
 
-// 限制请求体大小（最大 50MB，应对大会话批量上传）
-fastify.addContentTypeParser('application/json', { bodyLimit: 50 * 1024 * 1024 }, (req, body, done) => {
-  try {
-    done(null, JSON.parse(body));
-  } catch (err) {
-    done(err, undefined);
-  }
-});
 
 // 确保存储目录存在
 await mkdir(STORAGE_DIR, { recursive: true });

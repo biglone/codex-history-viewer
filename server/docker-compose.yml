@@ -4,13 +4,15 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: codex_sync_db
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: codex
       POSTGRES_PASSWORD: codex123
       POSTGRES_DB: codex_sync
-    ports:
-      - "5432:5432"
+    # 不映射到主机端口，避免与其他 postgres 冲突
+    # 容器内服务通过 docker 内网访问即可
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,16 +21,37 @@ services:
       timeout: 3s
       retries: 10
 
-  # 可选：adminer 数据库管理界面
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codex_sync_server
+    restart: always
+    env_file:
+      - .env
+    environment:
+      # 容器内数据库地址（覆盖 .env 中的 localhost）
+      DATABASE_URL: postgresql://codex:codex123@postgres:5432/codex_sync
+      STORAGE_DIR: /app/storage
+    ports:
+      - "3456:3456"
+    volumes:
+      - server_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # adminer 数据库管理界面（仅本机访问）
   adminer:
     image: adminer:latest
     container_name: codex_sync_adminer
     restart: unless-stopped
     ports:
-      - "8181:8080"
+      - "127.0.0.1:8181:8080"
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   postgres_data:
+  server_storage:
