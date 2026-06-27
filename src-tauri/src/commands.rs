@@ -297,3 +297,182 @@ pub fn get_sessions_for_upload(
     }
     Ok(result)
 }
+
+// ===================================
+// Import (Download) Commands
+// ===================================
+
+/// 从服务端下载的单条 session 数据结构（前端透传）
+#[derive(Debug, serde::Deserialize)]
+pub struct ImportSession {
+    /// 服务端 session 元数据
+    pub id: String,
+    pub device_id: String,
+    pub device_name: Option<String>,
+    pub title: Option<String>,
+    /// 原始上传时的 cwd（保留源设备路径，不做替换）
+    pub cwd: Option<String>,
+    pub model: Option<String>,
+    pub model_provider: Option<String>,
+    pub first_user_message: Option<String>,
+    pub preview: Option<String>,
+    pub created_at_ms: Option<i64>,
+    pub updated_at_ms: Option<i64>,
+    pub archived: Option<bool>,
+    pub message_count: Option<i64>,
+    /// 对应的消息列表（来自 /api/sessions/:id/messages）
+    pub messages: Vec<crate::db::Message>,
+}
+
+/// 单条导入结果
+#[derive(Debug, serde::Serialize)]
+pub struct ImportResult {
+    pub id: String,
+    pub ok: bool,
+    pub skipped: bool, // true = 本地已有更新版本，跳过
+    pub error: Option<String>,
+}
+
+/// 将服务端下载的会话批量写入本地 SQLite + 磁盘
+///
+/// # 路径策略
+/// - `cwd` 保留服务端原始值（即来源设备的项目路径），不做替换。
+///   这样跨设备来的历史会话在"按项目浏览"中以来源路径显示，内容完整可查。
+/// - 消息 JSONL 文件保存到 `~/.codex/synced/<session_id>.jsonl`，
+///   与本地任何项目路径解耦，避免路径不存在导致读取失败。
+#[tauri::command]
+pub fn import_sessions(sessions: Vec<ImportSession>) -> Result<Vec<ImportResult>, String> {
+    let conn = open_conn()?;
+
+    // 确保 synced 目录存在
+    let synced_dir = get_codex_dir().join("synced");
+    std::fs::create_dir_all(&synced_dir).map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+
+    for s in sessions {
+        let result = import_one(&conn, &synced_dir, s);
+        results.push(result);
+    }
+
+    Ok(results)
+}
+
+fn import_one(
+    conn: &rusqlite::Connection,
+    synced_dir: &std::path::Path,
+    s: ImportSession,
+) -> ImportResult {
+    // 1. 检查本地是否已有更新版本（updated_at_ms 更大则跳过）
+    let local_updated: Option<i64> = conn
+        .query_row(
+            "SELECT updated_at_ms FROM threads WHERE id = ?1",
+            [&s.id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let incoming_updated = s.updated_at_ms.unwrap_or(0);
+    if let Some(local_ms) = local_updated {
+        if local_ms >= incoming_updated {
+            return ImportResult {
+                id: s.id,
+                ok: true,
+                skipped: true,
+                error: None,
+            };
+        }
+    }
+
+    // 2. 将消息写入 ~/.codex/synced/<session_id>.jsonl
+    //    路径与本地 cwd 完全解耦，避免不同设备路径不同的问题
+    let jsonl_path = synced_dir.join(format!("{}.jsonl", s.id));
+    let rollout_path_str = jsonl_path.to_string_lossy().to_string();
+
+    if !s.messages.is_empty() {
+        let content: String = s
+            .messages
+            .iter()
+            .map(|m| serde_json::to_string(m).unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if let Err(e) = std::fs::write(&jsonl_path, content) {
+            return ImportResult {
+                id: s.id,
+                ok: false,
+                skipped: false,
+                error: Some(format!("写入消息文件失败: {}", e)),
+            };
+        }
+    }
+
+    // 3. Upsert 到本地 threads 表（适配真实 schema）
+    //    cwd 保留来源设备原始路径，不做替换
+    //    thread_source 存 "synced:<device_name>@<device_id>" 标识跨设备来源
+    let thread_source = format!(
+        "synced:{}@{}",
+        s.device_name.as_deref().unwrap_or("unknown"),
+        s.device_id
+    );
+    let created_at_ms = s.created_at_ms.unwrap_or(0);
+    // threads 表的 created_at / updated_at 是秒级 INTEGER（codex 原始字段）
+    let created_at_sec = created_at_ms / 1000;
+    let updated_at_sec = incoming_updated / 1000;
+
+    let upsert_result = conn.execute(
+        "INSERT INTO threads (
+            id, rollout_path, created_at, updated_at, source,
+            model_provider, cwd, title, sandbox_policy, approval_mode,
+            first_user_message, preview,
+            created_at_ms, updated_at_ms,
+            model, archived, thread_source
+         ) VALUES (?1,?2,?3,?4,'remote',?5,?6,?7,'none','suggest',?8,?9,?10,?11,?12,?13,?14)
+         ON CONFLICT(id) DO UPDATE SET
+            title              = excluded.title,
+            cwd                = excluded.cwd,
+            first_user_message = excluded.first_user_message,
+            preview            = excluded.preview,
+            updated_at         = excluded.updated_at,
+            updated_at_ms      = excluded.updated_at_ms,
+            model              = excluded.model,
+            model_provider     = excluded.model_provider,
+            archived           = excluded.archived,
+            rollout_path       = excluded.rollout_path,
+            thread_source      = excluded.thread_source
+         WHERE excluded.updated_at_ms > threads.updated_at_ms",
+        rusqlite::params![
+            s.id,
+            // rollout_path: 无消息时置空，有消息时指向 synced 目录
+            if s.messages.is_empty() { String::new() } else { rollout_path_str },
+            created_at_sec,
+            updated_at_sec,
+            s.model_provider.as_deref().unwrap_or(""),   // model_provider
+            s.cwd.as_deref().unwrap_or(""),               // cwd 保留原始路径
+            s.title.as_deref().unwrap_or("(无标题)"),
+            s.first_user_message.as_deref().unwrap_or(""),
+            s.preview.as_deref().unwrap_or(""),
+            created_at_ms,
+            incoming_updated,
+            s.model.as_deref().unwrap_or(""),
+            s.archived.unwrap_or(false) as i32,
+            thread_source,                                // 来源标识
+        ],
+    );
+
+    match upsert_result {
+        Ok(_) => ImportResult {
+            id: s.id,
+            ok: true,
+            skipped: false,
+            error: None,
+        },
+        Err(e) => ImportResult {
+            id: s.id,
+            ok: false,
+            skipped: false,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+

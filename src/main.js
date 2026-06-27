@@ -1226,7 +1226,8 @@ function closeThemePicker() {
 const syncState = {
   config: null,
   isSyncing: false,
-  toUpload: [],   // 需要上传的 session IDs
+  toUpload: [],    // 需要上传的 session IDs
+  toDownload: [],  // 需要下载的 session IDs（服务端有、本地没有或本地更旧）
 };
 
 async function openSyncPanel() {
@@ -1361,6 +1362,7 @@ async function syncCheck() {
 
     const diff = await res.json();
     syncState.toUpload = diff.to_upload || [];
+    syncState.toDownload = diff.to_download || [];
 
     document.getElementById('sync-server-count').textContent = diff.server_total;
     document.getElementById('sync-pending-count').textContent =
@@ -1471,6 +1473,123 @@ async function syncUpload() {
     syncState.isSyncing = false;
     btn.disabled = false;
     btn.textContent = '↑ 上传到服务端';
+    setTimeout(() => { progressWrap.style.display = 'none'; }, 3000);
+  }
+}
+
+// ─── 下载同步：从服务端拉取会话并写入本地 ──────────────────────────────────
+async function syncDownload() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先填写并保存服务器配置');
+    return;
+  }
+  if (syncState.isSyncing) return;
+
+  // 若没有检查过差异，先自动检查一次
+  if (syncState.toDownload.length === 0) {
+    await syncCheck();
+    if (syncState.toDownload.length === 0) {
+      syncLog('ok', '没有需要下载的会话，已是最新');
+      return;
+    }
+  }
+
+  syncState.isSyncing = true;
+  const btn = document.getElementById('sync-download-btn');
+  btn.disabled = true;
+  btn.textContent = '下载中...';
+
+  const progressWrap = document.getElementById('sync-progress-wrap');
+  const progressFill = document.getElementById('sync-progress-fill');
+  const progressText = document.getElementById('sync-progress-text');
+  progressWrap.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  const ids = [...syncState.toDownload];
+  const batchSize = 20;  // 每批拉取 20 条元数据
+  let imported = 0, failed = 0;
+
+  syncLog('info', `开始下载，共 ${ids.length} 条...`);
+
+  try {
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batchIds = ids.slice(i, i + batchSize);
+
+      // 1. 批量拉取元数据（sync/pull 接口）
+      const pullRes = await fetch(`${cfg.server_url}/api/sync/pull`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cfg.api_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: batchIds }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!pullRes.ok) {
+        const err = await pullRes.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${pullRes.status}`);
+      }
+      const { sessions: metaBatch } = await pullRes.json();
+
+      // 2. 逐条拉取消息内容，拼装完整 ImportSession
+      //    注意：cwd 保留服务端原始路径（来源设备路径），不做替换。
+      //    消息文件将保存到 ~/.codex/synced/<id>.jsonl，与本地路径解耦。
+      const importPayloads = [];
+      for (const meta of metaBatch) {
+        let messages = [];
+        if (meta.has_messages) {
+          try {
+            const msgRes = await fetch(
+              `${cfg.server_url}/api/sessions/${encodeURIComponent(meta.id)}/messages`,
+              {
+                headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+                signal: AbortSignal.timeout(20000),
+              }
+            );
+            if (msgRes.ok) {
+              const msgData = await msgRes.json();
+              messages = msgData.messages || [];
+            }
+          } catch (e) {
+            syncLog('warn', `拉取消息失败（${meta.id.slice(0,8)}...）：${e.message}`);
+          }
+        }
+        importPayloads.push({ ...meta, messages });
+      }
+
+      // 3. 调用 Rust import_sessions 写入本地 SQLite
+      const results = await invoke('import_sessions', { sessions: importPayloads });
+
+      const batchImported = results.filter(r => r.ok && !r.skipped).length;
+      const batchSkipped  = results.filter(r => r.ok && r.skipped).length;
+      const batchFailed   = results.filter(r => !r.ok).length;
+      imported += batchImported;
+      failed   += batchFailed;
+
+      // 进度更新
+      const progress = Math.round(((i + batchIds.length) / ids.length) * 100);
+      progressFill.style.width = `${progress}%`;
+      progressText.textContent = `已下载 ${imported} / ${ids.length}（跳过 ${batchSkipped}，失败 ${failed}）`;
+      syncLog(
+        batchFailed > 0 ? 'warn' : 'ok',
+        `批次 ${Math.floor(i / batchSize) + 1}：导入 ${batchImported} 条，跳过 ${batchSkipped} 条，失败 ${batchFailed} 条`
+      );
+    }
+
+    syncState.toDownload = [];
+    document.getElementById('sync-pending-count').textContent = `↑${syncState.toUpload.length} ↓0`;
+
+    syncLog('ok', `✓ 下载完成：成功 ${imported} 条，失败 ${failed} 条`);
+    // 刷新本地统计数字
+    const localIds = await invoke('get_local_session_ids');
+    document.getElementById('sync-local-count').textContent = localIds.length;
+  } catch (e) {
+    syncLog('error', `下载中断：${e.message || e}`);
+  } finally {
+    syncState.isSyncing = false;
+    btn.disabled = false;
+    btn.textContent = '↓ 下载到本地';
     setTimeout(() => { progressWrap.style.display = 'none'; }, 3000);
   }
 }

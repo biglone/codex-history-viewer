@@ -17,6 +17,7 @@ pub fn run() {
             commands::get_local_session_ids,
             commands::get_session_for_upload,
             commands::get_sessions_for_upload,
+            commands::import_sessions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
