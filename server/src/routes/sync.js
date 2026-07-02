@@ -72,8 +72,13 @@ export default async function syncRoutes(fastify) {
     );
 
     return {
+      // node-postgres 默认将 BIGINT 列返回为字符串（防止 JS 精度丢失），
+      // 但客户端 Rust 侧期望 i64 数字，必须显式转换。
       sessions: result.rows.map(r => ({
         ...r,
+        created_at_ms:  r.created_at_ms  != null ? Number(r.created_at_ms)  : null,
+        updated_at_ms:  r.updated_at_ms  != null ? Number(r.updated_at_ms)  : null,
+        message_count:  r.message_count  != null ? Number(r.message_count)  : null,
         messages_path: undefined, // 不暴露内部路径
         has_messages: !!r.messages_path,
       })),

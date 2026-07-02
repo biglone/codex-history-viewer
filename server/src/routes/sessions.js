@@ -15,6 +15,19 @@ async function ensureStorageDir(subDir) {
   return dir;
 }
 
+/**
+ * node-postgres 默认把 BIGINT 列作为字符串返回（防止 JS 精度丢失）。
+ * 客户端 Rust 侧期望 i64 数字，必须在序列化前显式转换。
+ */
+function normalizeRow(r) {
+  return {
+    ...r,
+    created_at_ms: r.created_at_ms != null ? Number(r.created_at_ms) : null,
+    updated_at_ms: r.updated_at_ms != null ? Number(r.updated_at_ms) : null,
+    message_count: r.message_count != null ? Number(r.message_count) : null,
+  };
+}
+
 export default async function sessionRoutes(fastify) {
 
   // ─── 上传/更新单条会话（含消息内容） ───────────────────────────────────────
@@ -239,7 +252,7 @@ export default async function sessionRoutes(fastify) {
     const countResult = await query(countSql, countParams);
 
     return {
-      sessions: result.rows,
+      sessions: result.rows.map(normalizeRow),
       total: parseInt(countResult.rows[0].count),
       page,
       pageSize,
@@ -350,7 +363,7 @@ export default async function sessionRoutes(fastify) {
     const result = await query(sql, params);
 
     return {
-      ids: result.rows.map(r => ({ id: r.id, updated_at_ms: r.updated_at_ms }))
+      ids: result.rows.map(r => ({ id: r.id, updated_at_ms: Number(r.updated_at_ms) }))
     };
   });
 
