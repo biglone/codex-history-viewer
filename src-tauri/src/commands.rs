@@ -390,10 +390,28 @@ fn import_one(
     let rollout_path_str = jsonl_path.to_string_lossy().to_string();
 
     if !s.messages.is_empty() {
+        // parse_rollout_file 期望 Codex 原始格式：
+        //   {"type":"response_item","timestamp":"...","payload":{"role":"user","content":[{"type":"output_text","text":"..."}]}}
+        // 直接序列化 Message 结构体得到的是简化格式 {role, content, timestamp}，
+        // parse_rollout_file 找不到 type=="response_item" 会返回空列表。
+        // 必须在写文件时转换为标准格式。
         let content: String = s
             .messages
             .iter()
-            .map(|m| serde_json::to_string(m).unwrap_or_default())
+            .map(|m| {
+                let line = serde_json::json!({
+                    "type": "response_item",
+                    "timestamp": m.timestamp,
+                    "payload": {
+                        "role": m.role,
+                        "content": [{
+                            "type": "output_text",
+                            "text": m.content
+                        }]
+                    }
+                });
+                serde_json::to_string(&line).unwrap_or_default()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         if let Err(e) = std::fs::write(&jsonl_path, content) {
