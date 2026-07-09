@@ -1618,3 +1618,267 @@ function syncLog(type, msg) {
 function syncClearLog() {
   document.getElementById('sync-log').innerHTML = '<div class="sync-log-empty">暂无同步记录</div>';
 }
+
+// ===================================
+// Automations Sync
+// ===================================
+const autoSyncState = {
+  toUploadNames: [],   // 需要上传的文件名列表
+  toDownload: [],      // 需要下载的 {name, device_id, device_name, updated_at_ms} 列表
+  isSyncing: false,
+};
+
+/**
+ * 检查本地 automations 与服务端的差异
+ */
+async function syncAutoCheck() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先填写并保存服务器配置，再同步自动化任务');
+    return;
+  }
+
+  const btn = document.getElementById('sync-auto-check-btn');
+  btn.disabled = true;
+  btn.textContent = '检查中...';
+
+  try {
+    // 1. 读取本地 automations 目录
+    const localFiles = await invoke('get_local_automations');
+    document.getElementById('sync-auto-local-count').textContent = localFiles.length;
+
+    // 2. 发送给服务端对比差异
+    const res = await fetch(`${cfg.server_url}/api/automations/check`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.api_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        device_id: cfg.device_id,
+        local_files: localFiles.map(f => ({ name: f.name, updated_at_ms: f.updated_at_ms })),
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const diff = await res.json();
+    autoSyncState.toUploadNames = diff.to_upload || [];
+    autoSyncState.toDownload = diff.to_download || [];
+
+    document.getElementById('sync-auto-upload-count').textContent = diff.to_upload.length;
+    document.getElementById('sync-auto-download-count').textContent = diff.to_download.length;
+
+    // 若有待同步项，显示提示徽章
+    const badge = document.getElementById('sync-auto-badge');
+    const total = diff.to_upload.length + diff.to_download.length;
+    if (total > 0) {
+      badge.textContent = `${total} 待同步`;
+      badge.style.display = 'inline-flex';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    syncLog('ok',
+      `自动化任务差异检查完成：需上传 ${diff.to_upload.length} 个，可下载 ${diff.to_download.length} 个`
+    );
+  } catch (e) {
+    syncLog('error', `自动化任务检查失败：${e.message || e}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '检查差异';
+  }
+}
+
+/**
+ * 上传本地 automations 到服务端
+ */
+async function syncAutoUpload() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先填写并保存服务器配置');
+    return;
+  }
+  if (autoSyncState.isSyncing) return;
+
+  // 如果没检查过，先自动检查
+  if (autoSyncState.toUploadNames.length === 0) {
+    await syncAutoCheck();
+    if (autoSyncState.toUploadNames.length === 0) {
+      syncLog('ok', '没有需要上传的自动化任务文件，已是最新');
+      return;
+    }
+  }
+
+  autoSyncState.isSyncing = true;
+  const btn = document.getElementById('sync-auto-upload-btn');
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  const progressWrap = document.getElementById('sync-auto-progress-wrap');
+  const progressFill = document.getElementById('sync-auto-progress-fill');
+  const progressText = document.getElementById('sync-auto-progress-text');
+  progressWrap.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  try {
+    // 读取所有本地 automation 文件
+    const allLocal = await invoke('get_local_automations');
+    const toUploadSet = new Set(autoSyncState.toUploadNames);
+    const filesToUpload = allLocal.filter(f => toUploadSet.has(f.name));
+
+    if (filesToUpload.length === 0) {
+      syncLog('ok', '没有找到需要上传的文件');
+      return;
+    }
+
+    syncLog('info', `开始上传 ${filesToUpload.length} 个自动化任务文件...`);
+
+    // 上传到服务端
+    const res = await fetch(`${cfg.server_url}/api/automations/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.api_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        device_id: cfg.device_id,
+        device_name: cfg.device_name,
+        automations: filesToUpload,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const result = await res.json();
+    progressFill.style.width = '100%';
+    progressText.textContent = `已上传 ${result.uploaded} / ${filesToUpload.length}（失败 ${result.failed}）`;
+
+    autoSyncState.toUploadNames = [];
+    document.getElementById('sync-auto-upload-count').textContent = '0';
+
+    // 更新徽章
+    const remaining = autoSyncState.toDownload.length;
+    const badge = document.getElementById('sync-auto-badge');
+    if (remaining > 0) {
+      badge.textContent = `${remaining} 待同步`;
+    } else {
+      badge.style.display = 'none';
+    }
+
+    syncLog('ok', `✓ 自动化任务上传完成：成功 ${result.uploaded} 个，失败 ${result.failed} 个`);
+  } catch (e) {
+    syncLog('error', `自动化任务上传失败：${e.message || e}`);
+  } finally {
+    autoSyncState.isSyncing = false;
+    btn.disabled = false;
+    btn.textContent = '↑ 上传自动化';
+    setTimeout(() => { progressWrap.style.display = 'none'; }, 3000);
+  }
+}
+
+/**
+ * 从服务端（其他设备）下载 automations 并写入本地
+ */
+async function syncAutoDownload() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先填写并保存服务器配置');
+    return;
+  }
+  if (autoSyncState.isSyncing) return;
+
+  // 如果没检查过，先自动检查
+  if (autoSyncState.toDownload.length === 0) {
+    await syncAutoCheck();
+    if (autoSyncState.toDownload.length === 0) {
+      syncLog('ok', '没有可下载的自动化任务文件，已是最新');
+      return;
+    }
+  }
+
+  autoSyncState.isSyncing = true;
+  const btn = document.getElementById('sync-auto-download-btn');
+  btn.disabled = true;
+  btn.textContent = '下载中...';
+
+  const progressWrap = document.getElementById('sync-auto-progress-wrap');
+  const progressFill = document.getElementById('sync-auto-progress-fill');
+  const progressText = document.getElementById('sync-auto-progress-text');
+  progressWrap.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  try {
+    const toDownload = [...autoSyncState.toDownload];
+    syncLog('info', `开始下载 ${toDownload.length} 个自动化任务文件...`);
+
+    // 从服务端拉取完整文件内容
+    const pullRes = await fetch(`${cfg.server_url}/api/automations/pull`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.api_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        files: toDownload.map(f => ({ name: f.name, device_id: f.device_id })),
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!pullRes.ok) {
+      const err = await pullRes.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${pullRes.status}`);
+    }
+
+    const { automations: pulled } = await pullRes.json();
+
+    progressFill.style.width = '50%';
+    progressText.textContent = `拉取完成，写入本地...`;
+
+    // 调用 Rust 写入本地 ~/.codex/automations/
+    const importResults = await invoke('import_automations', { automations: pulled });
+
+    const imported = importResults.filter(r => r.ok && !r.skipped).length;
+    const skipped  = importResults.filter(r => r.ok && r.skipped).length;
+    const failed   = importResults.filter(r => !r.ok).length;
+
+    progressFill.style.width = '100%';
+    progressText.textContent = `已写入 ${imported} 个（跳过 ${skipped}，失败 ${failed}）`;
+
+    autoSyncState.toDownload = [];
+    document.getElementById('sync-auto-download-count').textContent = '0';
+
+    // 更新本地文件数显示
+    const updatedLocal = await invoke('get_local_automations');
+    document.getElementById('sync-auto-local-count').textContent = updatedLocal.length;
+
+    // 更新徽章
+    const remaining = autoSyncState.toUploadNames.length;
+    const badge = document.getElementById('sync-auto-badge');
+    if (remaining > 0) {
+      badge.textContent = `${remaining} 待同步`;
+    } else {
+      badge.style.display = 'none';
+    }
+
+    syncLog(
+      failed > 0 ? 'warn' : 'ok',
+      `✓ 自动化任务下载完成：写入 ${imported} 个，跳过 ${skipped} 个，失败 ${failed} 个`
+    );
+  } catch (e) {
+    syncLog('error', `自动化任务下载失败：${e.message || e}`);
+  } finally {
+    autoSyncState.isSyncing = false;
+    btn.disabled = false;
+    btn.textContent = '↓ 下载自动化';
+    setTimeout(() => { progressWrap.style.display = 'none'; }, 3000);
+  }
+}

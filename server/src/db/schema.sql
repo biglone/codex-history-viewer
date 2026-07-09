@@ -49,3 +49,23 @@ CREATE INDEX IF NOT EXISTS idx_sync_log_device ON sync_log(device_id, created_at
 -- 全文搜索索引（可选，PostgreSQL 内置）
 CREATE INDEX IF NOT EXISTS idx_sessions_fts ON sessions
   USING gin(to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(first_user_message,'') || ' ' || coalesce(preview,'')));
+
+-- ───────────────────────────────────────────────────────────────────────
+-- Automations 同步表
+-- 存储每台设备上传的 ~/.codex/automations/ 目录中的文件
+-- 以 (device_id, name) 作为业务唯一键，支持跨设备合并最新版本
+-- ───────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS automations (
+  id            SERIAL PRIMARY KEY,
+  device_id     TEXT NOT NULL,             -- 来源设备 ID
+  device_name   TEXT,                      -- 来源设备名称（可读）
+  name          TEXT NOT NULL,             -- 文件名，如 "daily-report.json"
+  content       TEXT NOT NULL,             -- 文件完整内容（UTF-8）
+  updated_at_ms BIGINT NOT NULL,           -- 客户端文件最后修改时间（用于增量对比）
+  synced_at     TIMESTAMPTZ DEFAULT now(), -- 服务端最后同步时间
+  UNIQUE (device_id, name)                 -- 每设备每文件名唯一
+);
+
+CREATE INDEX IF NOT EXISTS idx_automations_device ON automations(device_id);
+CREATE INDEX IF NOT EXISTS idx_automations_name ON automations(name);
+CREATE INDEX IF NOT EXISTS idx_automations_updated ON automations(updated_at_ms DESC);

@@ -77,6 +77,9 @@ jobs:
           releaseBody: |
             ## Codex History Viewer ${{ github.ref_name }}
 
+            ### 新功能
+            - 🤖 **自动化任务同步**：支持将 `~/.codex/automations/` 目录中的自动化任务配置跨设备同步，在同步面板中点击「自动化任务」区块即可操作
+
             ### 下载说明
             - **macOS (Apple Silicon)**: 下载 `*_aarch64.dmg`
             - **macOS (Intel)**: 下载 `*_x64.dmg`

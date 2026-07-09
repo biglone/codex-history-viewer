@@ -270,3 +270,20 @@
   align-items: center;
   justify-content: center;
 }
+
+/* Automations 区块的待同步数徽章 */
+.sync-auto-badge {
+  background: #10b981;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+  animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}

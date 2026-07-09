@@ -18,6 +18,9 @@ pub fn run() {
             commands::get_session_for_upload,
             commands::get_sessions_for_upload,
             commands::import_sessions,
+            // Automations sync commands
+            commands::get_local_automations,
+            commands::import_automations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

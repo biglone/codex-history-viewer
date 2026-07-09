@@ -493,4 +493,144 @@ fn import_one(
     }
 }
 
+// ===================================
+// Automations Sync Commands
+// ===================================
+
+/// 本地单个 automation 文件的信息
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct AutomationFile {
+    /// 文件名（不含路径），例如 "daily-report.json"
+    pub name: String,
+    /// 文件内容（UTF-8 文本）
+    pub content: String,
+    /// 文件最后修改时间（Unix ms，用于增量对比）
+    pub updated_at_ms: i64,
+}
+
+/// 获取本地 ~/.codex/automations/ 目录下的所有文件
+#[tauri::command]
+pub fn get_local_automations() -> Result<Vec<AutomationFile>, String> {
+    let automations_dir = crate::db::get_codex_dir().join("automations");
+
+    if !automations_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut files = Vec::new();
+
+    for entry in std::fs::read_dir(&automations_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+
+        // 只处理文件，不递归
+        if !path.is_file() {
+            continue;
+        }
+
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // 跳过隐藏文件
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let content = std::fs::read_to_string(&path).map_err(|e| {
+            format!("读取 automation 文件 {} 失败: {}", name, e)
+        })?;
+
+        let updated_at_ms = path
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH).ok()
+            })
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        files.push(AutomationFile {
+            name,
+            content,
+            updated_at_ms,
+        });
+    }
+
+    // 按名称排序，方便对比
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(files)
+}
+
+/// 单条 automation 导入结果
+#[derive(Debug, serde::Serialize)]
+pub struct AutomationImportResult {
+    pub name: String,
+    pub ok: bool,
+    pub skipped: bool,
+    pub error: Option<String>,
+}
+
+/// 将从服务端下载的 automation 文件写入本地 ~/.codex/automations/
+///
+/// 策略：以 updated_at_ms 对比决定是否覆盖；本地更新的保留不覆盖。
+#[tauri::command]
+pub fn import_automations(
+    automations: Vec<AutomationFile>,
+) -> Result<Vec<AutomationImportResult>, String> {
+    let automations_dir = crate::db::get_codex_dir().join("automations");
+    std::fs::create_dir_all(&automations_dir).map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+
+    for automation in automations {
+        let file_path = automations_dir.join(&automation.name);
+
+        // 若本地已存在该文件，对比修改时间
+        if file_path.exists() {
+            let local_ms = file_path
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+
+            if local_ms >= automation.updated_at_ms {
+                // 本地文件更新或同等新，跳过
+                results.push(AutomationImportResult {
+                    name: automation.name,
+                    ok: true,
+                    skipped: true,
+                    error: None,
+                });
+                continue;
+            }
+        }
+
+        // 写入（覆盖或新建）
+        match std::fs::write(&file_path, &automation.content) {
+            Ok(_) => {
+                results.push(AutomationImportResult {
+                    name: automation.name,
+                    ok: true,
+                    skipped: false,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                results.push(AutomationImportResult {
+                    name: automation.name,
+                    ok: false,
+                    skipped: false,
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
 

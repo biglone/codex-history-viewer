@@ -27,6 +27,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import sessionRoutes from './routes/sessions.js';
 import syncRoutes from './routes/sync.js';
+import automationRoutes from './routes/automations.js';
 import { mkdir } from 'fs/promises';
 
 const PORT = parseInt(process.env.PORT || '3456');
@@ -57,22 +58,27 @@ await mkdir(STORAGE_DIR, { recursive: true });
 // 注册路由（统一前缀 /api）
 await fastify.register(sessionRoutes, { prefix: '/api' });
 await fastify.register(syncRoutes, { prefix: '/api' });
+await fastify.register(automationRoutes, { prefix: '/api' });
 
 // 根路径信息
 fastify.get('/', async () => ({
   name: 'Codex Sync Server',
   version: '1.0.0',
   endpoints: {
-    health:          'GET  /api/sync/health',
-    stats:           'GET  /api/sync/stats',
-    upload:          'POST /api/sessions/upload',
-    uploadBatch:     'POST /api/sessions/upload-batch',
-    syncCheck:       'POST /api/sync/check',
-    syncPull:        'POST /api/sync/pull',
-    listSessions:    'GET  /api/sessions',
-    searchSessions:  'GET  /api/sessions/search?q=keyword',
-    getMessages:     'GET  /api/sessions/:id/messages',
-    deleteSession:   'DELETE /api/sessions/:id',
+    health:                'GET    /api/sync/health',
+    stats:                 'GET    /api/sync/stats',
+    upload:                'POST   /api/sessions/upload',
+    uploadBatch:           'POST   /api/sessions/upload-batch',
+    syncCheck:             'POST   /api/sync/check',
+    syncPull:              'POST   /api/sync/pull',
+    listSessions:          'GET    /api/sessions',
+    searchSessions:        'GET    /api/sessions/search?q=keyword',
+    getMessages:           'GET    /api/sessions/:id/messages',
+    deleteSession:         'DELETE /api/sessions/:id',
+    automationsUpload:     'POST   /api/automations/upload',
+    automationsCheck:      'POST   /api/automations/check',
+    automationsPull:       'POST   /api/automations/pull',
+    automationsStats:      'GET    /api/automations/stats',
   },
 }));
 

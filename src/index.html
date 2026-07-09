@@ -353,6 +353,56 @@
       <div class="sync-last-time" id="sync-last-time"></div>
     </div>
 
+    <!-- 自动化任务同步区 -->
+    <div class="sync-section">
+      <div class="sync-section-title">
+        <span style="display:flex;align-items:center;gap:6px;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="1" y="2" width="10" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M4 5h4M4 7h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          自动化任务
+        </span>
+        <span class="sync-auto-badge" id="sync-auto-badge" style="display:none"></span>
+      </div>
+      <div class="sync-stat-row" style="margin-bottom:10px;">
+        <div class="sync-stat">
+          <div class="sync-stat-num" id="sync-auto-local-count">—</div>
+          <div class="sync-stat-label">本地文件</div>
+        </div>
+        <div class="sync-stat-arrow">⇄</div>
+        <div class="sync-stat">
+          <div class="sync-stat-num" id="sync-auto-upload-count">—</div>
+          <div class="sync-stat-label">待上传</div>
+        </div>
+        <div class="sync-stat-arrow">⇄</div>
+        <div class="sync-stat">
+          <div class="sync-stat-num" id="sync-auto-download-count">—</div>
+          <div class="sync-stat-label">可下载</div>
+        </div>
+      </div>
+      <div class="sync-progress-wrap" id="sync-auto-progress-wrap" style="display:none">
+        <div class="sync-progress-bar">
+          <div class="sync-progress-fill" id="sync-auto-progress-fill" style="background:linear-gradient(90deg,#10b981,#34d399)"></div>
+        </div>
+        <div class="sync-progress-text" id="sync-auto-progress-text">准备中...</div>
+      </div>
+      <div class="sync-actions">
+        <button class="sync-btn sync-btn-secondary" id="sync-auto-check-btn" onclick="syncAutoCheck()">
+          检查差异
+        </button>
+        <button class="sync-btn sync-btn-primary" id="sync-auto-upload-btn" onclick="syncAutoUpload()">
+          ↑ 上传自动化
+        </button>
+        <button class="sync-btn sync-btn-success" id="sync-auto-download-btn" onclick="syncAutoDownload()">
+          ↓ 下载自动化
+        </button>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
+        同步 <code style="font-size:10px;background:var(--bg-active);padding:1px 4px;border-radius:3px;">~/.codex/automations/</code> 目录中的自动化任务配置
+      </div>
+    </div>
+
     <!-- 同步日志 -->
     <div class="sync-section sync-log-section">
       <div class="sync-section-title">
