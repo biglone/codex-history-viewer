@@ -35,6 +35,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ── 从 tag 同步版本号到三处配置文件 ──────────────────────────────────
+      # 保证安装包文件名（来自 tauri.conf.json）与 GitHub Release tag 一致
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to $VERSION"
+
+          # 1. tauri.conf.json  → 控制安装包文件名
+          jq --arg v "$VERSION" '.version = $v' \
+            src-tauri/tauri.conf.json > _tmp.json \
+            && mv _tmp.json src-tauri/tauri.conf.json
+
+          # 2. package.json
+          jq --arg v "$VERSION" '.version = $v' \
+            package.json > _tmp.json \
+            && mv _tmp.json package.json
+
+          # 3. src-tauri/Cargo.toml  → 只替换 [package] 块的第一个 version 行
+          sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$VERSION\"/}" \
+            src-tauri/Cargo.toml
+
+          echo "=== 验证 ==="
+          grep '"version"' src-tauri/tauri.conf.json
+          grep '"version"' package.json
+          grep '^version' src-tauri/Cargo.toml | head -1
+
       # Linux 系统依赖
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
