@@ -506,24 +506,43 @@ pub struct AutomationFile {
     pub content: String,
     /// 文件最后修改时间（Unix ms，用于增量对比）
     pub updated_at_ms: i64,
+    /// 实际扫描目录路径（仅第一条携带，供前端诊断用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dir_path: Option<String>,
 }
 
 /// 获取本地 ~/.codex/automations/ 目录下的所有文件
 #[tauri::command]
 pub fn get_local_automations() -> Result<Vec<AutomationFile>, String> {
     let automations_dir = crate::db::get_codex_dir().join("automations");
+    let dir_path_str = automations_dir.to_string_lossy().to_string();
 
+    // 目录不存在时返回一个携带路径的哨兵条目，供前端日志诊断
     if !automations_dir.exists() {
-        return Ok(vec![]);
+        return Ok(vec![AutomationFile {
+            name: String::new(),           // 空名称 = 哨兵
+            content: String::new(),
+            updated_at_ms: 0,
+            dir_path: Some(dir_path_str), // 前端靠这个知道扫描的是哪个路径
+        }]);
     }
 
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
     let mut files = Vec::new();
+    let mut first = true;
 
     for entry in std::fs::read_dir(&automations_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue, // 跳过无法读取的单个条目，不影响其他文件
+        };
         let path = entry.path();
 
-        // 只处理文件，不递归
+        // 只处理文件，不递归子目录
         if !path.is_file() {
             continue;
         }
@@ -533,29 +552,38 @@ pub fn get_local_automations() -> Result<Vec<AutomationFile>, String> {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        // 跳过隐藏文件
-        if name.starts_with('.') {
+        // 跳过隐藏文件和无名文件
+        if name.is_empty() || name.starts_with('.') {
             continue;
         }
 
-        let content = std::fs::read_to_string(&path).map_err(|e| {
-            format!("读取 automation 文件 {} 失败: {}", name, e)
-        })?;
+        // 文件内容读取失败时跳过该文件并继续，不让单个坏文件阻断整批
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
 
-        let updated_at_ms = path
+        // Windows 上 file mtime 有时会返回 0；兜底用当前时间，确保会被判定为「需上传」
+        let raw_ms = path
             .metadata()
             .ok()
             .and_then(|m| m.modified().ok())
-            .and_then(|t| {
-                t.duration_since(std::time::UNIX_EPOCH).ok()
-            })
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
+        let updated_at_ms = if raw_ms > 0 { raw_ms } else { now_ms };
 
         files.push(AutomationFile {
             name,
             content,
             updated_at_ms,
+            // 只在第一个文件上携带目录路径，供前端日志用
+            dir_path: if first {
+                first = false;
+                Some(dir_path_str.clone())
+            } else {
+                None
+            },
         });
     }
 
@@ -586,6 +614,11 @@ pub fn import_automations(
     let mut results = Vec::new();
 
     for automation in automations {
+        // 跳过哨兵条目（name 为空，仅用于诊断路径）
+        if automation.name.is_empty() {
+            continue;
+        }
+
         let file_path = automations_dir.join(&automation.name);
 
         // 若本地已存在该文件，对比修改时间

@@ -1644,7 +1644,28 @@ async function syncAutoCheck() {
 
   try {
     // 1. 读取本地 automations 目录
-    const localFiles = await invoke('get_local_automations');
+    const rawFiles = await invoke('get_local_automations');
+
+    // 提取哨兵（name 为空 = 目录不存在）和真实文件
+    const sentinel = rawFiles.find(f => f.name === '');
+    const localFiles = rawFiles.filter(f => f.name !== '');
+
+    // 获取扫描路径（哨兵或第一个文件携带）
+    const dirPath = (sentinel || rawFiles[0])?.dir_path || '~/.codex/automations';
+
+    // 打诊断日志
+    if (sentinel) {
+      syncLog('warn', `自动化任务目录不存在：${dirPath}`);
+      syncLog('warn', '请确认 Codex 已安装且在该目录下创建过自动化任务');
+    } else {
+      syncLog('info', `扫描路径：${dirPath}`);
+      if (localFiles.length === 0) {
+        syncLog('warn', '目录存在但未找到任何文件（文件可能无法读取）');
+      } else {
+        localFiles.forEach(f => syncLog('info', `  · ${f.name}  (mtime: ${new Date(f.updated_at_ms).toLocaleString('zh-CN')})`));
+      }
+    }
+
     document.getElementById('sync-auto-local-count').textContent = localFiles.length;
 
     // 2. 发送给服务端对比差异
