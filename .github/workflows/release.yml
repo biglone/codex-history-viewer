@@ -129,7 +129,7 @@ jobs:
             ### Agy 会话导入
             - 支持从 JSON、JSONL、TXT、Markdown 导入 Agy 会话到 Codex 历史
             - 提供无界面的 `codex-history-cli` 命令行工具，适用于服务器和纯终端环境
-            - Linux CLI 使用 musl 静态构建，不依赖 GTK/WebKit 桌面运行库
+            - Linux x64 CLI 使用 musl 静态构建；所有 CLI 产物都不依赖 GTK/WebKit 桌面运行库
 
             ### 下载说明
             - **macOS (Apple Silicon)**: 下载 `*_aarch64.dmg`
@@ -173,7 +173,7 @@ jobs:
             cli_ext: ''
           - platform: ubuntu-24.04-arm
             label: 'Linux-arm64'
-            cli_target: 'aarch64-unknown-linux-musl'
+            cli_target: 'aarch64-unknown-linux-gnu'
             cli_ext: ''
 
     runs-on: ${{ matrix.platform }}
