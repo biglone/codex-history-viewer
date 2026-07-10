@@ -15,6 +15,7 @@ pub fn run() {
             commands::get_sync_config,
             commands::save_sync_config,
             commands::get_local_session_ids,
+            commands::get_local_project_paths,
             commands::get_session_for_upload,
             commands::get_sessions_for_upload,
             commands::import_sessions,

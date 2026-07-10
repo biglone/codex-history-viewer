@@ -157,6 +157,15 @@ function createSessionCard(s) {
   const projectName = getProjectName(s.cwd);
   const preview = s.preview || s.first_user_message || '无内容';
 
+  // 判断是否来自其他设备
+  const myDeviceId = (typeof syncState !== 'undefined' ? syncState.config?.device_id : '') || '';
+  const isCrossDevice = s.device_id && myDeviceId && s.device_id !== myDeviceId;
+  // cwd 是否像跨平台路径（含 /Users/ 或 /home/ 且当前是 Windows，或含盘符且当前是 Mac/Linux）
+  const looksLikeForeignPath = s.cwd && (
+    (navigator.platform.startsWith('Win') && (s.cwd.startsWith('/Users/') || s.cwd.startsWith('/home/'))) ||
+    (!navigator.platform.startsWith('Win') && /^[A-Za-z]:[/\\]/.test(s.cwd))
+  );
+
   card.innerHTML = `
     <div class="card-header">
       <div class="card-title">${escHtml(s.title || s.first_user_message || '未命名会话')}</div>
@@ -165,11 +174,17 @@ function createSessionCard(s) {
     <div class="card-preview">${escHtml(preview.slice(0, 120))}</div>
     <div class="card-footer">
       ${s.model ? `<span class="tag tag-model">${escHtml(s.model)}</span>` : ''}
-      ${projectName ? `<span class="tag tag-project" title="${escHtml(s.cwd)}">
+      ${projectName ? `<span class="tag tag-project${looksLikeForeignPath ? ' tag-foreign-path' : ''}" title="${looksLikeForeignPath ? '原始路径（来自其他设备）：' : ''}${escHtml(s.cwd)}">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
           <path d="M1 3a1 1 0 011-1h2l1 1h4a1 1 0 011 1v4a1 1 0 01-1 1H2a1 1 0 01-1-1V3z" fill="currentColor"/>
         </svg>
         ${escHtml(projectName)}
+      </span>` : ''}
+      ${isCrossDevice && s.device_name ? `<span class="tag tag-device" title="来自设备：${escHtml(s.device_name)}">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+        </svg>
+        ${escHtml(s.device_name)}
       </span>` : ''}
       ${s.archived ? '<span class="tag tag-archived">归档</span>' : ''}
     </div>
@@ -1035,6 +1050,44 @@ function getProjectName(cwd) {
   return parts[parts.length - 1] || cwd;
 }
 
+/**
+ * 跨设备 cwd 路径自动映射
+ * 对 device_id 不同于本机的 session，用项目名（cwd 末段）在本地项目列表里查找等价路径。
+ * @param {Array} sessions  - 待导入的 session 列表（含 messages）
+ * @param {string} myDeviceId - 本机 device_id
+ * @returns {{ sessions, matchedCount, unmatchedCount }}
+ */
+async function remapSessionCwds(sessions, myDeviceId) {
+  // 拉取本地项目路径列表（projectName → localCwd）
+  let projectMap = new Map();
+  try {
+    const localProjects = await invoke('get_local_project_paths');
+    for (const p of localProjects) {
+      if (!projectMap.has(p.project_name)) {
+        projectMap.set(p.project_name, p.local_cwd);
+      }
+    }
+  } catch (_) { /* 命令不存在时跳过 */ }
+
+  let matchedCount = 0, unmatchedCount = 0;
+
+  const result = sessions.map(s => {
+    // 本机会话：cwd 直接有效，不做任何修改
+    if (!s.device_id || s.device_id === myDeviceId) return s;
+
+    const projectName = getProjectName(s.cwd);
+    if (projectName && projectMap.has(projectName)) {
+      matchedCount++;
+      return { ...s, cwd: projectMap.get(projectName) };
+    }
+    // 未匹配：保留原始 cwd，前端展示时会提示来自其他设备
+    unmatchedCount++;
+    return s;
+  });
+
+  return { sessions: result, matchedCount, unmatchedCount };
+}
+
 function formatTime(ms) {
   if (!ms) return '';
   const d = new Date(ms);
@@ -1558,8 +1611,19 @@ async function syncDownload() {
         importPayloads.push({ ...meta, messages });
       }
 
-      // 3. 调用 Rust import_sessions 写入本地 SQLite
-      const results = await invoke('import_sessions', { sessions: importPayloads });
+      // 3. 跨设备路径自动匹配：把其他设备的 cwd 重写为本地等价路径
+      //    策略：提取 cwd 最后一段目录名，在本地会话 cwd 中找同名项目
+      const remapResult = await remapSessionCwds(importPayloads, cfg.device_id);
+      const remapped = remapResult.sessions;
+      if (remapResult.matchedCount > 0) {
+        syncLog('info', `路径自动匹配：${remapResult.matchedCount} 条会话 cwd 已重写为本地路径`);
+      }
+      if (remapResult.unmatchedCount > 0) {
+        syncLog('warn', `路径未匹配：${remapResult.unmatchedCount} 条来自其他设备（将保留原始路径）`);
+      }
+
+      // 4. 调用 Rust import_sessions 写入本地 SQLite
+      const results = await invoke('import_sessions', { sessions: remapped });
 
       const batchImported = results.filter(r => r.ok && !r.skipped).length;
       const batchSkipped  = results.filter(r => r.ok && r.skipped).length;

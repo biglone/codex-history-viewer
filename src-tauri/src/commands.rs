@@ -247,6 +247,53 @@ pub fn get_local_session_ids() -> Result<Vec<serde_json::Value>, String> {
     rows.map_err(|e| e.to_string())
 }
 
+/// 本地项目路径映射条目（供跨设备 cwd 自动匹配使用）
+#[derive(Debug, serde::Serialize)]
+pub struct LocalProjectPath {
+    pub project_name: String, // cwd 最后一段目录名，如 "MyProject"
+    pub local_cwd: String,    // 完整本地路径，如 "C:\\Users\\win\\work\\MyProject"
+}
+
+/// 查询本地所有不重复的 cwd，提取项目名，供前端做跨设备路径匹配
+/// 同名取最近使用的那条（ORDER BY updated_at_ms DESC）
+#[tauri::command]
+pub fn get_local_project_paths() -> Result<Vec<LocalProjectPath>, String> {
+    let conn = open_conn()?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT cwd FROM threads \
+             WHERE cwd IS NOT NULL AND cwd != '' \
+             ORDER BY updated_at_ms DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let cwds: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+
+    for cwd in cwds {
+        let project_name = std::path::Path::new(&cwd)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if project_name.is_empty() {
+            continue;
+        }
+        // 同名只保留第一条（即最近使用的）
+        if seen.insert(project_name.clone()) {
+            result.push(LocalProjectPath { project_name, local_cwd: cwd });
+        }
+    }
+
+    Ok(result)
+}
+
 /// 获取单条 session 完整数据（元数据 + 消息），用于上传到服务端
 #[derive(Debug, serde::Serialize)]
 pub struct SessionUploadPayload {

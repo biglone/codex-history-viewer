@@ -601,6 +601,20 @@ html, body {
   border: 1px solid rgba(251,191,36,0.15);
 }
 
+/* 来源设备标签：蓝色，表示 session 来自其他设备 */
+.tag-device {
+  background: rgba(96,165,250,0.1);
+  color: var(--blue);
+  border: 1px solid rgba(96,165,250,0.2);
+}
+
+/* 路径来自其他平台且未被匹配：橙色警告 */
+.tag-foreign-path {
+  background: rgba(251,146,60,0.1);
+  color: #fb923c;
+  border: 1px solid rgba(251,146,60,0.2);
+}
+
 /* ===================================
    Search Results
 =================================== */
