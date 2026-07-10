@@ -330,7 +330,7 @@ export default async function sessionRoutes(fastify) {
   });
 
 
-  // ─── 删除会话 ────────────────────────────────────────────────────────────
+  // ─── 删除单条会话 ─────────────────────────────────────────────────────────
   // DELETE /api/sessions/:id
   fastify.delete('/sessions/:id', { preHandler: auth }, async (req, reply) => {
     const { id } = req.params;
@@ -341,7 +341,107 @@ export default async function sessionRoutes(fastify) {
     if (result.rows.length === 0) {
       return reply.code(404).send({ error: 'Session not found' });
     }
+    // 清理消息文件
+    const { messages_path } = result.rows[0];
+    if (messages_path) {
+      const { unlink } = await import('fs/promises');
+      await unlink(join(STORAGE_DIR, messages_path)).catch(() => {});
+    }
     return { ok: true, id };
+  });
+
+
+  // ─── 批量删除会话 ─────────────────────────────────────────────────────────
+  // POST /api/sessions/delete-batch
+  // Body: { ids: ["id1", "id2", ...] }
+  fastify.post('/sessions/delete-batch', { preHandler: auth }, async (req, reply) => {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: 'ids must be a non-empty array' });
+    }
+    if (ids.length > 500) {
+      return reply.code(400).send({ error: 'Max 500 ids per batch' });
+    }
+
+    // 先拿到 messages_path 列表
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+    const fetched = await query(
+      `SELECT id, messages_path FROM sessions WHERE id IN (${placeholders})`,
+      ids
+    );
+    const rows = fetched.rows;
+
+    // 删除数据库记录
+    await query(`DELETE FROM sessions WHERE id IN (${placeholders})`, ids);
+
+    // 清理磁盘文件（忽略失败）
+    const { unlink } = await import('fs/promises');
+    for (const row of rows) {
+      if (row.messages_path) {
+        await unlink(join(STORAGE_DIR, row.messages_path)).catch(() => {});
+      }
+    }
+
+    return { ok: true, deleted: rows.length };
+  });
+
+
+  // ─── 获取服务端各设备会话摘要（用于管理界面） ────────────────────────────
+  // GET /api/sessions/manage-list?device_id=xxx&page=0&pageSize=50
+  fastify.get('/sessions/manage-list', { preHandler: auth }, async (req, reply) => {
+    const deviceId = req.query.device_id || null;
+    const page     = parseInt(req.query.page || '0');
+    const pageSize = Math.min(parseInt(req.query.pageSize || '50'), 200);
+    const offset   = page * pageSize;
+
+    let sql = `SELECT id, device_id, device_name, title, cwd,
+                      created_at_ms, updated_at_ms, archived, message_count
+               FROM sessions`;
+    const params = [];
+    if (deviceId) {
+      sql += ` WHERE device_id = $1`;
+      params.push(deviceId);
+    }
+    sql += ` ORDER BY updated_at_ms DESC
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(pageSize, offset);
+
+    const result = await query(sql, params);
+
+    let countSql = 'SELECT COUNT(*) FROM sessions';
+    const countParams = [];
+    if (deviceId) { countSql += ' WHERE device_id = $1'; countParams.push(deviceId); }
+    const countResult = await query(countSql, countParams);
+
+    return {
+      sessions: result.rows.map(normalizeRow),
+      total: parseInt(countResult.rows[0].count),
+      page,
+      pageSize,
+    };
+  });
+
+
+  // ─── 获取服务端设备列表（用于管理界面筛选） ──────────────────────────────
+  // GET /api/sessions/devices
+  fastify.get('/sessions/devices', { preHandler: auth }, async (req, reply) => {
+    const result = await query(
+      `SELECT d.id, d.name, d.platform, d.last_seen,
+              COUNT(s.id) AS session_count
+       FROM devices d
+       LEFT JOIN sessions s ON s.device_id = d.id
+       GROUP BY d.id, d.name, d.platform, d.last_seen
+       ORDER BY d.last_seen DESC`
+    );
+    return {
+      devices: result.rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        platform: r.platform,
+        last_seen: r.last_seen,
+        session_count: parseInt(r.session_count),
+      })),
+    };
   });
 
 

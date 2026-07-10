@@ -1982,3 +1982,256 @@ async function syncAutoDownload() {
     setTimeout(() => { progressWrap.style.display = 'none'; }, 3000);
   }
 }
+
+// ===================================
+// 管理线上数据面板
+// ===================================
+
+const manageState = {
+  sessionPage: 0,
+  sessionPageSize: 50,
+  sessionTotal: 0,
+  sessions: [],
+  automations: [],
+};
+
+function toggleManagePanel() {
+  const body   = document.getElementById('sync-manage-body');
+  const toggle = document.getElementById('sync-manage-toggle');
+  const open   = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  toggle.textContent = open ? '▼ 收起' : '▶ 展开';
+  if (open) loadManageList();
+}
+
+async function loadManageList() {
+  const cfg = syncState.config;
+  if (!cfg?.server_url || !cfg?.api_token) {
+    syncLog('warn', '请先保存同步配置');
+    return;
+  }
+  manageState.sessionPage = 0;
+  await Promise.all([
+    _loadManageDevices(cfg),
+    _loadManageSessions(cfg),
+    _loadManageAutomations(cfg),
+  ]);
+}
+
+async function _loadManageDevices(cfg) {
+  try {
+    const res = await fetch(`${cfg.server_url}/api/sessions/devices`, {
+      headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const sel = document.getElementById('sync-manage-device-filter');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部设备</option>';
+    for (const d of (data.devices || [])) {
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = `${d.name || d.id}（${d.session_count} 条会话）`;
+      if (d.id === cur) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  } catch (_) {}
+}
+
+async function _loadManageSessions(cfg) {
+  const deviceId = document.getElementById('sync-manage-device-filter').value;
+  const listEl   = document.getElementById('sync-manage-session-list');
+  const countEl  = document.getElementById('sync-manage-session-count');
+  const pageEl   = document.getElementById('sync-manage-session-pagination');
+
+  listEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">加载中...</div>';
+  try {
+    const params = new URLSearchParams({ page: manageState.sessionPage, pageSize: manageState.sessionPageSize });
+    if (deviceId) params.set('device_id', deviceId);
+    const res = await fetch(`${cfg.server_url}/api/sessions/manage-list?${params}`, {
+      headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    manageState.sessions     = data.sessions || [];
+    manageState.sessionTotal = data.total    || 0;
+    countEl.textContent = `（共 ${manageState.sessionTotal} 条）`;
+
+    if (manageState.sessions.length === 0) {
+      listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">暂无会话</div>';
+      pageEl.innerHTML = '';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    for (const s of manageState.sessions) {
+      const item  = document.createElement('div');
+      item.className   = 'manage-list-item';
+      const title = s.title || s.first_user_message || '未命名会话';
+      const date  = s.updated_at_ms ? new Date(s.updated_at_ms).toLocaleDateString('zh-CN') : '—';
+      const proj  = getProjectName(s.cwd);
+      item.innerHTML = `
+        <input type="checkbox" class="manage-cb manage-cb-session" data-id="${escHtml(s.id)}"
+               style="margin-right:8px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+               title="${escHtml(title)}">${escHtml(title.slice(0, 60))}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">
+            ${proj ? `📁 ${escHtml(proj)}  ` : ''}${escHtml(s.device_name || '')}  ${date}
+          </div>
+        </div>
+        <button onclick="manageDeleteOne('session','${escHtml(s.id)}')"
+                style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">🗑</button>`;
+      listEl.appendChild(item);
+    }
+
+    const totalPages = Math.ceil(manageState.sessionTotal / manageState.sessionPageSize);
+    pageEl.innerHTML = totalPages > 1
+      ? `<button class="sync-btn sync-btn-secondary" style="padding:2px 8px;font-size:10px;"
+               ${manageState.sessionPage === 0 ? 'disabled' : ''}
+               onclick="manageSessionPage(${manageState.sessionPage - 1})">上一页</button>
+         <span>${manageState.sessionPage + 1} / ${totalPages}</span>
+         <button class="sync-btn sync-btn-secondary" style="padding:2px 8px;font-size:10px;"
+               ${manageState.sessionPage >= totalPages - 1 ? 'disabled' : ''}
+               onclick="manageSessionPage(${manageState.sessionPage + 1})">下一页</button>`
+      : '';
+  } catch (e) {
+    listEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px;">加载失败：${escHtml(e.message)}</div>`;
+  }
+}
+
+async function _loadManageAutomations(cfg) {
+  const deviceId = document.getElementById('sync-manage-device-filter').value;
+  const listEl   = document.getElementById('sync-manage-auto-list');
+  const countEl  = document.getElementById('sync-manage-auto-count');
+
+  listEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">加载中...</div>';
+  try {
+    const params = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : '';
+    const res = await fetch(`${cfg.server_url}/api/automations/list${params}`, {
+      headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    manageState.automations = data.automations || [];
+    countEl.textContent = `（共 ${manageState.automations.length} 条）`;
+
+    if (manageState.automations.length === 0) {
+      listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">暂无自动化任务</div>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    for (const a of manageState.automations) {
+      const item = document.createElement('div');
+      item.className  = 'manage-list-item';
+      const date = a.synced_at ? new Date(a.synced_at).toLocaleDateString('zh-CN') : '—';
+      const key  = `${a.device_id}|||${a.name}`;
+      item.innerHTML = `
+        <input type="checkbox" class="manage-cb manage-cb-auto" data-key="${escHtml(key)}"
+               style="margin-right:8px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+               title="${escHtml(a.name)}">${escHtml(a.name)}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">
+            ${escHtml(a.device_name || a.device_id)}  ${date}
+          </div>
+        </div>
+        <button onclick="manageDeleteOne('auto','${escHtml(key)}')"
+                style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:2px 4px;flex-shrink:0;" title="删除">🗑</button>`;
+      listEl.appendChild(item);
+    }
+  } catch (e) {
+    listEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px;">加载失败：${escHtml(e.message)}</div>`;
+  }
+}
+
+function manageSessionPage(page) {
+  manageState.sessionPage = page;
+  _loadManageSessions(syncState.config);
+}
+
+function manageSelectAll(type) {
+  document.querySelectorAll(type === 'session' ? '.manage-cb-session' : '.manage-cb-auto')
+    .forEach(cb => { cb.checked = true; });
+}
+
+function manageSelectNone(type) {
+  document.querySelectorAll(type === 'session' ? '.manage-cb-session' : '.manage-cb-auto')
+    .forEach(cb => { cb.checked = false; });
+}
+
+async function manageDeleteOne(type, key) {
+  const cfg = syncState.config;
+  if (!cfg?.server_url) return;
+  if (!confirm(`确定删除这条线上${type === 'session' ? '会话' : '自动化任务'}吗？此操作不可撤销。`)) return;
+  try {
+    if (type === 'session') {
+      const res = await fetch(`${cfg.server_url}/api/sessions/delete-batch`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.api_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [key] }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } else {
+      const [device_id, name] = key.split('|||');
+      const res = await fetch(`${cfg.server_url}/api/automations/delete-batch`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.api_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [{ device_id, name }] }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }
+    syncLog('ok', `已删除 1 条线上${type === 'session' ? '会话' : '自动化任务'}`);
+    await loadManageList();
+  } catch (e) {
+    syncLog('error', `删除失败：${e.message}`);
+  }
+}
+
+async function manageDeleteSelected(type) {
+  const cfg = syncState.config;
+  if (!cfg?.server_url) return;
+  const cls     = type === 'session' ? '.manage-cb-session:checked' : '.manage-cb-auto:checked';
+  const checked = [...document.querySelectorAll(cls)];
+  if (checked.length === 0) { alert('请先勾选要删除的条目'); return; }
+  if (!confirm(`确定删除所选 ${checked.length} 条线上${type === 'session' ? '会话' : '自动化任务'}吗？此操作不可撤销。`)) return;
+  try {
+    if (type === 'session') {
+      const ids = checked.map(cb => cb.dataset.id);
+      const res = await fetch(`${cfg.server_url}/api/sessions/delete-batch`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.api_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      syncLog('ok', `已删除 ${data.deleted} 条线上会话`);
+    } else {
+      const items = checked.map(cb => {
+        const [device_id, name] = cb.dataset.key.split('|||');
+        return { device_id, name };
+      });
+      const res = await fetch(`${cfg.server_url}/api/automations/delete-batch`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.api_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      syncLog('ok', `已删除 ${data.deleted} 条线上自动化任务`);
+    }
+    await loadManageList();
+  } catch (e) {
+    syncLog('error', `批量删除失败：${e.message}`);
+  }
+}

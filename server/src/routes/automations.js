@@ -190,4 +190,58 @@ export default async function automationRoutes(fastify) {
     };
   });
 
+
+  // ─── 列出服务端 automations（用于管理界面） ──────────────────────────────
+  // GET /api/automations/list?device_id=xxx
+  fastify.get('/automations/list', { preHandler: auth }, async (req, reply) => {
+    const deviceId = req.query.device_id || null;
+
+    let sql = `SELECT id, device_id, device_name, name, updated_at_ms, synced_at
+               FROM automations`;
+    const params = [];
+    if (deviceId) {
+      sql += ' WHERE device_id = $1';
+      params.push(deviceId);
+    }
+    sql += ' ORDER BY device_id, name';
+
+    const result = await query(sql, params);
+    return {
+      automations: result.rows.map(r => ({
+        id: r.id,
+        device_id: r.device_id,
+        device_name: r.device_name,
+        name: r.name,
+        updated_at_ms: Number(r.updated_at_ms),
+        synced_at: r.synced_at,
+      })),
+    };
+  });
+
+
+  // ─── 批量删除 automations ────────────────────────────────────────────────
+  // POST /api/automations/delete-batch
+  // Body: { items: [{device_id, name}] }
+  fastify.post('/automations/delete-batch', { preHandler: auth }, async (req, reply) => {
+    const { items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return reply.code(400).send({ error: 'items must be a non-empty array' });
+    }
+    if (items.length > 200) {
+      return reply.code(400).send({ error: 'Max 200 items per batch' });
+    }
+
+    let deleted = 0;
+    for (const item of items) {
+      if (!item.device_id || !item.name) continue;
+      const res = await query(
+        'DELETE FROM automations WHERE device_id = $1 AND name = $2',
+        [item.device_id, item.name]
+      );
+      deleted += res.rowCount || 0;
+    }
+
+    return { ok: true, deleted };
+  });
+
 }

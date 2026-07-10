@@ -615,6 +615,17 @@ html, body {
   border: 1px solid rgba(251,146,60,0.2);
 }
 
+/* 管理面板列表条目 */
+.manage-list-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+.manage-list-item:last-child { border-bottom: none; }
+.manage-list-item:hover { background: var(--bg-hover); }
+
 /* ===================================
    Search Results
 =================================== */

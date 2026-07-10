@@ -403,6 +403,80 @@
       </div>
     </div>
 
+
+    <!-- 管理线上数据 -->
+    <div class="sync-section" id="sync-manage-section">
+      <div class="sync-section-title" style="cursor:pointer;user-select:none;" onclick="toggleManagePanel()">
+        <span style="display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+          </svg>
+          管理线上数据
+        </span>
+        <span id="sync-manage-toggle" style="font-size:11px;color:var(--text-muted);">▶ 展开</span>
+      </div>
+
+      <div id="sync-manage-body" style="display:none;">
+        <!-- 设备筛选 -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <label style="font-size:11px;color:var(--text-secondary);white-space:nowrap;">筛选设备：</label>
+          <select id="sync-manage-device-filter" class="sync-input" style="flex:1;padding:4px 8px;font-size:11px;"
+                  onchange="loadManageList()">
+            <option value="">全部设备</option>
+          </select>
+          <button class="sync-btn sync-btn-secondary" style="padding:4px 10px;font-size:11px;"
+                  onclick="loadManageList()">刷新</button>
+        </div>
+
+        <!-- 会话列表 -->
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:11px;font-weight:600;color:var(--text-secondary);">
+              线上会话
+              <span id="sync-manage-session-count" style="color:var(--text-muted);font-weight:400;"></span>
+            </span>
+            <div style="display:flex;gap:6px;">
+              <button class="sync-btn sync-btn-secondary" style="padding:2px 8px;font-size:10px;"
+                      onclick="manageSelectAll('session')">全选</button>
+              <button class="sync-btn sync-btn-secondary" style="padding:2px 8px;font-size:10px;"
+                      onclick="manageSelectNone('session')">取消</button>
+              <button class="sync-btn" style="padding:2px 8px;font-size:10px;background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.2);"
+                      onclick="manageDeleteSelected('session')">删除所选</button>
+            </div>
+          </div>
+          <div id="sync-manage-session-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+            <div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">
+              点击「展开」后自动加载
+            </div>
+          </div>
+          <div id="sync-manage-session-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px;font-size:11px;color:var(--text-muted);"></div>
+        </div>
+
+        <!-- 自动化任务列表 -->
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:11px;font-weight:600;color:var(--text-secondary);">
+              线上自动化任务
+              <span id="sync-manage-auto-count" style="color:var(--text-muted);font-weight:400;"></span>
+            </span>
+            <div style="display:flex;gap:6px;">
+              <button class="sync-btn sync-btn-secondary" style="padding:2px 8px;font-size:10px;"
+                      onclick="manageSelectAll('auto')">全选</button>
+              <button class="sync-btn sync-btn-secondary" style="padding:2px 8px;font-size:10px;"
+                      onclick="manageSelectNone('auto')">取消</button>
+              <button class="sync-btn" style="padding:2px 8px;font-size:10px;background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.2);"
+                      onclick="manageDeleteSelected('auto')">删除所选</button>
+            </div>
+          </div>
+          <div id="sync-manage-auto-list" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+            <div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">
+              点击「展开」后自动加载
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 同步日志 -->
     <div class="sync-section sync-log-section">
       <div class="sync-section-title">
