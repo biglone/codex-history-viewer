@@ -23,6 +23,8 @@ const state = {
   detailSearchScope: 'all',  // 'all' | 'user' | 'assistant'
   detailMatches: [],      // Array of <mark> elements
   detailMatchIndex: -1,   // Current active match index
+  agyPreview: null,
+  agyImporting: false,
   // Theme
   theme: 'default',
 };
@@ -74,14 +76,15 @@ function switchView(view) {
   } else {
     searchBar.style.display = 'none';
     pageTitle.style.display = 'block';
-    localFilterBar.style.display = view === 'projects' ? 'none' : 'flex';
+    localFilterBar.style.display = (view === 'projects' || view === 'agy-import') ? 'none' : 'flex';
   }
 
-  const titles = { all: '全部会话', projects: '按项目浏览', search: '全局搜索' };
+  const titles = { all: '全部会话', projects: '按项目浏览', search: '全局搜索', 'agy-import': '导入 Agy 会话' };
   pageTitle.textContent = titles[view] || '会话';
 
   if (view === 'all') loadAllSessions();
   else if (view === 'projects') loadProjects();
+  else if (view === 'agy-import') renderAgyImportView();
   else if (view === 'search') {
     renderEmpty('请输入关键词开始全局搜索');
     hidePagination();
@@ -96,6 +99,7 @@ async function refresh() {
     if (state.view === 'all') await loadAllSessions();
     else if (state.view === 'projects') await loadProjects();
     else if (state.view === 'search' && state.searchQuery) await doSearch(state.searchQuery);
+    else if (state.view === 'agy-import') await agyPreviewImport();
   } finally {
     if (btn) btn.classList.remove('spinning');
   }
@@ -258,6 +262,216 @@ function clearLocalFilter() {
       c.classList.remove('filtered-hidden');
     });
   }
+}
+
+// ===================================
+// Agy Import
+// ===================================
+function renderAgyImportView() {
+  hidePagination();
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="agy-import-view">
+      <section class="agy-import-toolbar">
+        <div class="agy-import-copy">
+          <div class="agy-import-kicker">本地转换</div>
+          <h2>把 Agy 历史写成 Codex 会话</h2>
+          <p>支持扫描 Agy 导出的 JSON、JSONL、TXT、Markdown 文件，并写入 <code>~/.codex/agy_imported/</code> 与本机 Codex 索引。</p>
+        </div>
+        <div class="agy-import-controls">
+          <label class="agy-path-label" for="agy-source-path">历史文件或目录路径</label>
+          <div class="agy-path-row">
+            <input id="agy-source-path" class="agy-path-input" type="text"
+              placeholder="留空自动探测，或填写 ~/.agy / 导出的 conversation.jsonl" autocomplete="off" />
+            <button class="sync-btn sync-btn-secondary" id="agy-preview-btn" onclick="agyPreviewImport()">扫描</button>
+            <button class="sync-btn sync-btn-primary" id="agy-import-btn" onclick="agyRunImport()" disabled>导入</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="agy-import-status" id="agy-import-status">
+        <div class="agy-empty-hint">先扫描 Agy 历史目录，确认候选会话后再导入。</div>
+      </section>
+
+      <section class="agy-import-list" id="agy-import-list"></section>
+    </div>
+  `;
+
+  const input = document.getElementById('agy-source-path');
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') agyPreviewImport();
+  });
+}
+
+async function agyPreviewImport() {
+  if (state.agyImporting) return;
+  if (state.view !== 'agy-import') renderAgyImportView();
+
+  const path = (document.getElementById('agy-source-path')?.value || '').trim();
+  const status = document.getElementById('agy-import-status');
+  const list = document.getElementById('agy-import-list');
+  const previewBtn = document.getElementById('agy-preview-btn');
+  const importBtn = document.getElementById('agy-import-btn');
+
+  if (previewBtn) previewBtn.disabled = true;
+  if (importBtn) importBtn.disabled = true;
+  status.innerHTML = '<div class="loading-state agy-inline-loading"><div class="spinner"></div><p>正在扫描...</p></div>';
+  list.innerHTML = '';
+
+  try {
+    const preview = await invoke('preview_agy_import', { sourcePath: path || null });
+    state.agyPreview = preview;
+    renderAgyPreview(preview);
+  } catch (e) {
+    state.agyPreview = null;
+    status.innerHTML = `
+      <div class="agy-import-error">
+        <div class="agy-error-title">扫描失败</div>
+        <div class="agy-error-msg">${escHtml(String(e))}</div>
+      </div>
+      ${renderAgyDefaultPaths(defaultAgyProbePaths())}
+    `;
+  } finally {
+    if (previewBtn) previewBtn.disabled = false;
+  }
+}
+
+function renderAgyPreview(preview) {
+  const status = document.getElementById('agy-import-status');
+  const list = document.getElementById('agy-import-list');
+  const importBtn = document.getElementById('agy-import-btn');
+  const canImport = preview.candidate_count > 0;
+  if (importBtn) importBtn.disabled = !canImport;
+
+  status.innerHTML = `
+    <div class="agy-summary-grid">
+      <div class="agy-summary-card">
+        <div class="agy-summary-num">${preview.candidate_count}</div>
+        <div class="agy-summary-label">可导入会话</div>
+      </div>
+      <div class="agy-summary-card">
+        <div class="agy-summary-num">${preview.scanned_files}</div>
+        <div class="agy-summary-label">已扫描文件</div>
+      </div>
+      <div class="agy-summary-card agy-summary-path">
+        <div class="agy-summary-label">扫描路径</div>
+        <div class="agy-summary-text">${escHtml(preview.source_root)}</div>
+      </div>
+    </div>
+    ${preview.warnings?.length ? renderAgyWarnings(preview.warnings) : ''}
+    ${!canImport ? `<div class="agy-empty-hint">没有识别到会话。可以填写 Agy 导出的 JSON/JSONL/TXT 文件路径后重新扫描。</div>` : ''}
+  `;
+
+  if (!canImport) {
+    list.innerHTML = renderAgyDefaultPaths(preview.default_paths || []);
+    return;
+  }
+
+  const items = (preview.sessions || []).map(s => `
+    <div class="agy-session-row">
+      <div class="agy-session-main">
+        <div class="agy-session-title">${escHtml(s.title || '未命名 Agy 会话')}</div>
+        <div class="agy-session-meta">
+          <span>${formatTime(s.created_at_ms)}</span>
+          <span>${s.message_count} 条消息</span>
+          ${s.cwd ? `<span>${escHtml(getProjectName(s.cwd))}</span>` : ''}
+        </div>
+      </div>
+      <div class="agy-session-source" title="${escHtml(s.source_file)}">${escHtml(s.source_file)}</div>
+    </div>
+  `).join('');
+
+  list.innerHTML = `
+    <div class="agy-list-header">
+      <span>候选预览</span>
+      ${preview.candidate_count > preview.sessions.length ? `<span>仅显示前 ${preview.sessions.length} 条</span>` : ''}
+    </div>
+    ${items}
+  `;
+}
+
+async function agyRunImport() {
+  if (state.agyImporting) return;
+  const path = (document.getElementById('agy-source-path')?.value || '').trim();
+  const status = document.getElementById('agy-import-status');
+  const importBtn = document.getElementById('agy-import-btn');
+  const previewBtn = document.getElementById('agy-preview-btn');
+
+  state.agyImporting = true;
+  if (importBtn) importBtn.disabled = true;
+  if (previewBtn) previewBtn.disabled = true;
+  status.insertAdjacentHTML('beforeend', '<div class="agy-running" id="agy-running">正在写入 Codex 会话...</div>');
+
+  try {
+    const result = await invoke('import_agy_sessions', { sourcePath: path || null });
+    await loadTotalCount();
+    renderAgyImportResult(result);
+  } catch (e) {
+    const running = document.getElementById('agy-running');
+    if (running) running.remove();
+    status.insertAdjacentHTML('beforeend', `
+      <div class="agy-import-error">
+        <div class="agy-error-title">导入失败</div>
+        <div class="agy-error-msg">${escHtml(String(e))}</div>
+      </div>
+    `);
+  } finally {
+    state.agyImporting = false;
+    if (previewBtn) previewBtn.disabled = false;
+    if (importBtn) importBtn.disabled = !(state.agyPreview?.candidate_count > 0);
+  }
+}
+
+function renderAgyImportResult(result) {
+  const running = document.getElementById('agy-running');
+  if (running) running.remove();
+  const status = document.getElementById('agy-import-status');
+  status.insertAdjacentHTML('beforeend', `
+    <div class="agy-result-banner">
+      <div>
+        <div class="agy-result-title">导入完成</div>
+        <div class="agy-result-copy">成功 ${result.imported} 条，跳过 ${result.skipped} 条，失败 ${result.failed} 条。</div>
+      </div>
+      <button class="sync-btn sync-btn-secondary" onclick="switchView('all')">查看全部会话</button>
+    </div>
+    ${result.warnings?.length ? renderAgyWarnings(result.warnings) : ''}
+  `);
+}
+
+function renderAgyWarnings(warnings) {
+  return `
+    <div class="agy-warnings">
+      ${warnings.slice(0, 6).map(w => `<div>${escHtml(w)}</div>`).join('')}
+      ${warnings.length > 6 ? `<div>还有 ${warnings.length - 6} 条扫描提示未显示</div>` : ''}
+    </div>
+  `;
+}
+
+function renderAgyDefaultPaths(paths) {
+  if (!paths || paths.length === 0) return '';
+  return `
+    <div class="agy-default-paths">
+      <div class="agy-default-title">自动探测路径</div>
+      ${paths.map(p => `<code>${escHtml(p)}</code>`).join('')}
+    </div>
+  `;
+}
+
+function defaultAgyProbePaths() {
+  return [
+    '$AGY_HOME',
+    '~/.agy',
+    '~/.agy/sessions',
+    '~/.agy/conversations',
+    '~/.config/agy',
+    '~/.config/agy/sessions',
+    '~/.local/share/agy',
+    '~/.local/share/agy/sessions',
+    '~/.cache/agy',
+    '~/.gemini/conversations',
+    '~/.gemini/sessions',
+    '~/.gemini/history',
+  ];
 }
 
 // ===================================

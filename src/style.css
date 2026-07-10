@@ -896,6 +896,322 @@ html, body {
 .empty-state p { font-size: 13px; }
 
 /* ===================================
+   Agy Import
+=================================== */
+.agy-import-view {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+
+.agy-import-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 22px;
+  align-items: end;
+  padding: 18px 0 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+}
+
+.agy-import-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--green);
+  margin-bottom: 8px;
+}
+
+.agy-import-copy h2 {
+  font-size: 20px;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.agy-import-copy p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  max-width: 560px;
+}
+
+.agy-import-copy code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text-accent);
+}
+
+.agy-import-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agy-path-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.agy-path-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 8px;
+}
+
+.agy-path-input {
+  min-width: 0;
+  height: 34px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: 12px var(--font-mono);
+  padding: 0 11px;
+  outline: none;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.agy-path-input:focus {
+  border-color: var(--border-active);
+  background: var(--bg-hover);
+}
+
+.agy-import-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.agy-summary-grid {
+  display: grid;
+  grid-template-columns: 150px 150px minmax(260px, 1fr);
+  gap: 10px;
+}
+
+.agy-summary-card {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+  min-height: 72px;
+}
+
+.agy-summary-num {
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 750;
+  color: var(--text-accent);
+  margin-bottom: 7px;
+}
+
+.agy-summary-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.agy-summary-path {
+  min-width: 0;
+}
+
+.agy-summary-text {
+  margin-top: 8px;
+  font: 12px var(--font-mono);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agy-empty-hint,
+.agy-running,
+.agy-warnings,
+.agy-import-error,
+.agy-result-banner {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+}
+
+.agy-empty-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.agy-inline-loading {
+  min-height: 82px;
+}
+
+.agy-running {
+  color: var(--text-accent);
+  font-size: 13px;
+}
+
+.agy-warnings {
+  color: var(--amber);
+  font: 11px/1.6 var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agy-import-error {
+  border-color: rgba(248,113,113,0.25);
+}
+
+.agy-error-title {
+  color: var(--red);
+  font-weight: 650;
+  margin-bottom: 5px;
+}
+
+.agy-error-msg {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.agy-result-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-color: rgba(52,211,153,0.2);
+}
+
+.agy-result-title {
+  color: var(--green);
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.agy-result-copy {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.agy-import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agy-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 2px 6px;
+}
+
+.agy-session-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.8fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.agy-session-row:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+}
+
+.agy-session-main {
+  min-width: 0;
+}
+
+.agy-session-title {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 5px;
+}
+
+.agy-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agy-session-meta span {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.agy-session-source {
+  min-width: 0;
+  color: var(--text-muted);
+  font: 11px var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agy-default-paths {
+  display: grid;
+  gap: 6px;
+}
+
+.agy-default-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  margin-bottom: 2px;
+}
+
+.agy-default-paths code {
+  display: block;
+  color: var(--text-muted);
+  font: 11px var(--font-mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 860px) {
+  .agy-import-toolbar,
+  .agy-summary-grid,
+  .agy-session-row {
+    grid-template-columns: 1fr;
+  }
+
+  .agy-path-row {
+    grid-template-columns: 1fr;
+  }
+
+  .agy-result-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* ===================================
    Detail Panel
 =================================== */
 .detail-overlay {
