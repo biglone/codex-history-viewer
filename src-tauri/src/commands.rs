@@ -511,19 +511,22 @@ pub struct AutomationFile {
     pub dir_path: Option<String>,
 }
 
-/// 获取本地 ~/.codex/automations/ 目录下的所有文件
+/// 获取本地 ~/.codex/automations/ 目录下的所有条目
+/// 支持两种格式：
+///   1. 直接文件（如 task.json）
+///   2. 子目录（如 my-task/），将子目录内所有文件打包为 JSON object
 #[tauri::command]
 pub fn get_local_automations() -> Result<Vec<AutomationFile>, String> {
     let automations_dir = crate::db::get_codex_dir().join("automations");
     let dir_path_str = automations_dir.to_string_lossy().to_string();
 
-    // 目录不存在时返回一个携带路径的哨兵条目，供前端日志诊断
+    // 目录不存在时返回携带路径的哨兵条目，供前端日志诊断
     if !automations_dir.exists() {
         return Ok(vec![AutomationFile {
-            name: String::new(),           // 空名称 = 哨兵
+            name: String::new(),
             content: String::new(),
             updated_at_ms: 0,
-            dir_path: Some(dir_path_str), // 前端靠这个知道扫描的是哪个路径
+            dir_path: Some(dir_path_str),
         }]);
     }
 
@@ -538,46 +541,78 @@ pub fn get_local_automations() -> Result<Vec<AutomationFile>, String> {
     for entry in std::fs::read_dir(&automations_dir).map_err(|e| e.to_string())? {
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => continue, // 跳过无法读取的单个条目，不影响其他文件
+            Err(_) => continue,
         };
         let path = entry.path();
-
-        // 只处理文件，不递归子目录
-        if !path.is_file() {
-            continue;
-        }
-
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        // 跳过隐藏文件和无名文件
         if name.is_empty() || name.starts_with('.') {
             continue;
         }
 
-        // 文件内容读取失败时跳过该文件并继续，不让单个坏文件阻断整批
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let (content, updated_at_ms) = if path.is_file() {
+            // ── 模式 1：直接文件 ──────────────────────────────────────────────
+            let c = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let raw_ms = path
+                .metadata().ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            (c, if raw_ms > 0 { raw_ms } else { now_ms })
+        } else if path.is_dir() {
+            // ── 模式 2：子目录，将内部文件打包为 JSON object ──────────────────
+            let mut sub_map = std::collections::BTreeMap::new();
+            let mut dir_max_ms: i64 = 0;
+
+            if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                for sub_entry in sub_entries.flatten() {
+                    let sp = sub_entry.path();
+                    if !sp.is_file() { continue; }
+                    let sname = sp.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if sname.is_empty() || sname.starts_with('.') { continue; }
+                    if let Ok(sc) = std::fs::read_to_string(&sp) {
+                        let ms = sp.metadata().ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_millis() as i64)
+                            .unwrap_or(0);
+                        if ms > dir_max_ms { dir_max_ms = ms; }
+                        sub_map.insert(sname, sc);
+                    }
+                }
+            }
+
+            if sub_map.is_empty() { continue; }
+
+            let packed = serde_json::to_string(&sub_map)
+                .unwrap_or_else(|_| "{}".to_string());
+            let ms = if dir_max_ms > 0 { dir_max_ms } else { now_ms };
+            // 目录名加 "/" 后缀用于区分文件和目录格式
+            (packed, ms)
+        } else {
+            continue;
         };
 
-        // Windows 上 file mtime 有时会返回 0；兜底用当前时间，确保会被判定为「需上传」
-        let raw_ms = path
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
-        let updated_at_ms = if raw_ms > 0 { raw_ms } else { now_ms };
+        // 目录条目 name 加 "/" 后缀，方便 import 时判断恢复为目录
+        let entry_name = if path.is_dir() {
+            format!("{}/", name)
+        } else {
+            name
+        };
 
         files.push(AutomationFile {
-            name,
+            name: entry_name,
             content,
             updated_at_ms,
-            // 只在第一个文件上携带目录路径，供前端日志用
             dir_path: if first {
                 first = false;
                 Some(dir_path_str.clone())
@@ -587,9 +622,43 @@ pub fn get_local_automations() -> Result<Vec<AutomationFile>, String> {
         });
     }
 
-    // 按名称排序，方便对比
     files.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(files)
+}
+
+/// 诊断用：返回 ~/.codex/automations/ 目录的原始条目列表（不过滤）
+#[derive(Debug, serde::Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_file: bool,
+    pub is_dir: bool,
+    pub size_bytes: u64,
+}
+
+#[tauri::command]
+pub fn debug_automations_dir() -> Result<(String, Vec<DirEntry>), String> {
+    let automations_dir = crate::db::get_codex_dir().join("automations");
+    let dir_path_str = automations_dir.to_string_lossy().to_string();
+
+    if !automations_dir.exists() {
+        return Ok((dir_path_str, vec![]));
+    }
+
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(&automations_dir).map_err(|e| e.to_string())? {
+        let entry = match entry { Ok(e) => e, Err(_) => continue };
+        let path = entry.path();
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let meta = path.metadata().ok();
+        entries.push(DirEntry {
+            name,
+            is_file: path.is_file(),
+            is_dir: path.is_dir(),
+            size_bytes: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+        });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok((dir_path_str, entries))
 }
 
 /// 单条 automation 导入结果
@@ -619,47 +688,94 @@ pub fn import_automations(
             continue;
         }
 
-        let file_path = automations_dir.join(&automation.name);
+        let is_dir_pack = automation.name.ends_with('/');
 
-        // 若本地已存在该文件，对比修改时间
-        if file_path.exists() {
-            let local_ms = file_path
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
+        if is_dir_pack {
+            // ── 目录格式：name="my-task/" content=JSON{filename->content} ──
+            let dir_name = automation.name.trim_end_matches('/');
+            let target_dir = automations_dir.join(dir_name);
 
-            if local_ms >= automation.updated_at_ms {
-                // 本地文件更新或同等新，跳过
-                results.push(AutomationImportResult {
-                    name: automation.name,
-                    ok: true,
-                    skipped: true,
-                    error: None,
-                });
-                continue;
-            }
-        }
+            // 解包 content JSON
+            let sub_files: std::collections::BTreeMap<String, String> =
+                match serde_json::from_str(&automation.content) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        results.push(AutomationImportResult {
+                            name: automation.name,
+                            ok: false,
+                            skipped: false,
+                            error: Some(format!("解析目录包失败: {}", e)),
+                        });
+                        continue;
+                    }
+                };
 
-        // 写入（覆盖或新建）
-        match std::fs::write(&file_path, &automation.content) {
-            Ok(_) => {
-                results.push(AutomationImportResult {
-                    name: automation.name,
-                    ok: true,
-                    skipped: false,
-                    error: None,
-                });
-            }
-            Err(e) => {
+            if let Err(e) = std::fs::create_dir_all(&target_dir) {
                 results.push(AutomationImportResult {
                     name: automation.name,
                     ok: false,
                     skipped: false,
                     error: Some(e.to_string()),
                 });
+                continue;
+            }
+
+            let mut any_written = false;
+            for (fname, fcontent) in &sub_files {
+                let fpath = target_dir.join(fname);
+                if std::fs::write(&fpath, fcontent).is_ok() {
+                    any_written = true;
+                }
+            }
+
+            results.push(AutomationImportResult {
+                name: automation.name,
+                ok: any_written || sub_files.is_empty(),
+                skipped: false,
+                error: None,
+            });
+        } else {
+            // ── 普通文件格式 ──────────────────────────────────────────────────
+            let file_path = automations_dir.join(&automation.name);
+
+            // 若本地已存在该文件，对比修改时间
+            if file_path.exists() {
+                let local_ms = file_path
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+
+                if local_ms >= automation.updated_at_ms {
+                    results.push(AutomationImportResult {
+                        name: automation.name,
+                        ok: true,
+                        skipped: true,
+                        error: None,
+                    });
+                    continue;
+                }
+            }
+
+            match std::fs::write(&file_path, &automation.content) {
+                Ok(_) => {
+                    results.push(AutomationImportResult {
+                        name: automation.name,
+                        ok: true,
+                        skipped: false,
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    results.push(AutomationImportResult {
+                        name: automation.name,
+                        ok: false,
+                        skipped: false,
+                        error: Some(e.to_string()),
+                    });
+                }
             }
         }
     }

@@ -21,6 +21,7 @@ pub fn run() {
             // Automations sync commands
             commands::get_local_automations,
             commands::import_automations,
+            commands::debug_automations_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

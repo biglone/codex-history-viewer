@@ -1643,6 +1643,21 @@ async function syncAutoCheck() {
   btn.textContent = '检查中...';
 
   try {
+    // 0. 先打出原始目录清单（诊断用）
+    try {
+      const [dbgPath, dbgEntries] = await invoke('debug_automations_dir');
+      syncLog('info', `📂 ${dbgPath} 共 ${dbgEntries.length} 个条目：`);
+      if (dbgEntries.length === 0) {
+        syncLog('warn', '  （目录为空）');
+      } else {
+        dbgEntries.forEach(e => {
+          const type = e.is_dir ? '[目录]' : '[文件]';
+          const size = e.is_file ? ` ${(e.size_bytes / 1024).toFixed(1)} KB` : '';
+          syncLog('info', `  ${type} ${e.name}${size}`);
+        });
+      }
+    } catch (_) { /* 旧版本无此命令时忽略 */ }
+
     // 1. 读取本地 automations 目录
     const rawFiles = await invoke('get_local_automations');
 
