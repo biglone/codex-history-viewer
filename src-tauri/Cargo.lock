@@ -91,6 +91,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "codex-history-cli",
  "dirs-next",
  "log",
  "rusqlite",
@@ -456,6 +457,17 @@ dependencies = [
  "num-traits",
  "serde",
  "windows-link 0.2.1",
+]
+
+[[package]]
+name = "codex-history-cli"
+version = "0.1.0"
+dependencies = [
+ "dirs-next",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "walkdir",
 ]
 
 [[package]]

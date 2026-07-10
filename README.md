@@ -25,6 +25,8 @@ codex-history-viewer/
   - **全局搜索**：跨所有会话文件（SQLite + JSONL）深度检索
 - 💬 **对话详情** — 侧边栏展示完整多轮问答，支持全屏查看，多段回答自动合并
 - ☁️ **云端同步** — 增量上传会话到自建服务端，跨设备查看历史
+- 📥 **Agy 会话导入** — 将 JSON、JSONL、TXT、Markdown 格式的 Agy 历史写入 Codex 本地历史
+- 🖥️ **Headless CLI** — 在服务器、SSH 和纯终端环境中执行 Agy 会话预览与导入
 - ⌨️ **键盘快捷键** — `Cmd+F` / `Cmd+G` / `Esc`
 
 ### 数据来源
@@ -66,6 +68,64 @@ npm run build
 > ```bash
 > echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 > ```
+
+### 纯终端 CLI
+
+Release 中提供独立的跨平台 `codex-history-cli-*` 文件。该程序不启动 Tauri，Windows/macOS 可直接运行，Linux 使用 musl 静态构建，不依赖 GTK/WebKit 等桌面运行库。
+
+| 系统 | Release 文件 |
+|------|--------------|
+| macOS Apple Silicon | `codex-history-cli-macOS-arm64` |
+| macOS Intel | `codex-history-cli-macOS-x64` |
+| Windows x64 | `codex-history-cli-Windows-x64.exe` |
+| Linux x64 | `codex-history-cli-Linux-x64` |
+| Linux ARM64 | `codex-history-cli-Linux-arm64` |
+
+```bash
+# Linux 示例
+chmod +x codex-history-cli-Linux-x64
+sudo install codex-history-cli-Linux-x64 /usr/local/bin/codex-history-cli
+
+# macOS 示例
+chmod +x codex-history-cli-macOS-arm64
+./codex-history-cli-macOS-arm64 agy-import preview --source ~/.agy
+```
+
+```powershell
+# Windows PowerShell 示例
+.\codex-history-cli-Windows-x64.exe agy-import preview --source "$env:USERPROFILE\.agy"
+```
+
+```bash
+# 预览可导入会话，不写入 Codex
+codex-history-cli agy-import preview ~/.agy
+
+# JSON 输出，适合脚本处理
+codex-history-cli agy-import preview --source ~/agy-export --json
+
+# 正式写入 Codex 会话历史
+codex-history-cli agy-import run --source ~/agy-export
+```
+
+导入会写入：
+
+```text
+~/.codex/state_5.sqlite
+~/.codex/agy_imported/<session-id>.jsonl
+```
+
+如果设置了 `CODEX_HOME` 或 `CODEX_SQLITE_HOME`，CLI 会按 Codex 的环境变量读取对应目录。
+
+支持 `.json`、`.jsonl`、`.ndjson`、`.txt`、`.md`。重复导入同一版本时会返回 `skipped`，失败时进程退出码为非零。
+
+用户下载 Release 中的 CLI 二进制后无需安装 Rust、Node.js、Tauri、GTK 或 WebKit。Rust 和桌面开发库只用于从源码构建项目。
+
+从源码构建 CLI：
+
+```bash
+cargo build --manifest-path cli/Cargo.toml --release
+./cli/target/release/codex-history-cli --help
+```
 
 ### 键盘快捷键
 

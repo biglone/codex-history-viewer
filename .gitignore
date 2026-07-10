@@ -1,5 +1,6 @@
 # Rust build output
 src-tauri/target/
+cli/target/
 
 # Node.js
 node_modules/

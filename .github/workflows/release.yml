@@ -18,15 +18,19 @@ jobs:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'   # Apple Silicon
             label: 'macOS-arm64'
+            rust_targets: 'aarch64-apple-darwin'
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'    # Intel Mac
             label: 'macOS-x64'
+            rust_targets: 'x86_64-apple-darwin'
           - platform: windows-latest
             args: ''
             label: 'Windows'
+            rust_targets: ''
           - platform: ubuntu-22.04
             args: ''
             label: 'Linux'
+            rust_targets: ''
 
     runs-on: ${{ matrix.platform }}
     name: Build (${{ matrix.label }})
@@ -92,7 +96,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -122,14 +126,93 @@ jobs:
               - 单文件读取失败时跳过该文件，不影响其他文件
             - 🔧 修复安装包文件名版本号与 Release tag 不一致的问题（CI 自动同步版本）
 
+            ### Agy 会话导入
+            - 支持从 JSON、JSONL、TXT、Markdown 导入 Agy 会话到 Codex 历史
+            - 提供无界面的 `codex-history-cli` 命令行工具，适用于服务器和纯终端环境
+            - Linux CLI 使用 musl 静态构建，不依赖 GTK/WebKit 桌面运行库
+
             ### 下载说明
             - **macOS (Apple Silicon)**: 下载 `*_aarch64.dmg`
             - **macOS (Intel)**: 下载 `*_x64.dmg`
             - **Windows**: 下载 `*_x64-setup.exe` 或 `*_x64_en-US.msi`
             - **Linux**: 下载 `*.AppImage` 或 `*.deb`
+            - **纯终端 CLI**: 下载对应平台的 `codex-history-cli-*` 文件：
+              - `codex-history-cli-macOS-arm64`
+              - `codex-history-cli-macOS-x64`
+              - `codex-history-cli-Windows-x64.exe`
+              - `codex-history-cli-Linux-x64`
+              - `codex-history-cli-Linux-arm64`
 
             ### 使用说明
-            需要先安装 [Codex Desktop](https://openai.com/codex)，本工具读取 `~/.codex/` 下的本地数据。
+            需要先安装并运行一次 Codex，使其创建 `~/.codex/state_5.sqlite`。纯终端环境不需要安装 Codex Desktop。
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  build-headless-cli:
+    needs: build-tauri
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            label: 'macOS-arm64'
+            cli_target: 'aarch64-apple-darwin'
+            cli_ext: ''
+          - platform: macos-latest
+            label: 'macOS-x64'
+            cli_target: 'x86_64-apple-darwin'
+            cli_ext: ''
+          - platform: windows-latest
+            label: 'Windows-x64'
+            cli_target: 'x86_64-pc-windows-msvc'
+            cli_ext: '.exe'
+          - platform: ubuntu-22.04
+            label: 'Linux-x64'
+            cli_target: 'x86_64-unknown-linux-musl'
+            cli_ext: ''
+          - platform: ubuntu-24.04-arm
+            label: 'Linux-arm64'
+            cli_target: 'aarch64-unknown-linux-musl'
+            cli_ext: ''
+
+    runs-on: ${{ matrix.platform }}
+    name: Build headless CLI (${{ matrix.label }})
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install musl tools
+        if: startsWith(matrix.cli_target, 'x86_64-unknown-linux-musl') || startsWith(matrix.cli_target, 'aarch64-unknown-linux-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.cli_target }}
+
+      - name: Build headless CLI
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cli_target }}" == "x86_64-pc-windows-msvc" ]]; then
+            export RUSTFLAGS="-C target-feature=+crt-static"
+          fi
+
+          cargo build \
+            --manifest-path cli/Cargo.toml \
+            --release \
+            --target "${{ matrix.cli_target }}"
+
+          SOURCE="cli/target/${{ matrix.cli_target }}/release/codex-history-cli${{ matrix.cli_ext }}"
+          OUTPUT="codex-history-cli-${{ matrix.label }}${{ matrix.cli_ext }}"
+          cp "$SOURCE" "$OUTPUT"
+          echo "CLI_ASSET=$OUTPUT" >> "$GITHUB_ENV"
+
+      - name: Upload headless CLI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" "${CLI_ASSET}" --clobber
