@@ -744,6 +744,7 @@ pub fn import_automations(
 ) -> Result<Vec<AutomationImportResult>, String> {
     let automations_dir = crate::db::get_codex_dir().join("automations");
     std::fs::create_dir_all(&automations_dir).map_err(|e| e.to_string())?;
+    let project_paths = local_project_path_map();
 
     let mut results = Vec::new();
 
@@ -788,8 +789,20 @@ pub fn import_automations(
             let mut any_written = false;
             for (fname, fcontent) in &sub_files {
                 let fpath = target_dir.join(fname);
-                if std::fs::write(&fpath, fcontent).is_ok() {
-                    any_written = true;
+                match normalize_automation_content(fname, fcontent, &project_paths) {
+                    Ok(normalized) => {
+                        if std::fs::write(&fpath, normalized).is_ok() {
+                            any_written = true;
+                        }
+                    }
+                    Err(e) => {
+                        results.push(AutomationImportResult {
+                            name: format!("{}{}", automation.name, fname),
+                            ok: false,
+                            skipped: false,
+                            error: Some(e),
+                        });
+                    }
                 }
             }
 
@@ -824,7 +837,24 @@ pub fn import_automations(
                 }
             }
 
-            match std::fs::write(&file_path, &automation.content) {
+            let content = match normalize_automation_content(
+                &automation.name,
+                &automation.content,
+                &project_paths,
+            ) {
+                Ok(content) => content,
+                Err(e) => {
+                    results.push(AutomationImportResult {
+                        name: automation.name,
+                        ok: false,
+                        skipped: false,
+                        error: Some(e),
+                    });
+                    continue;
+                }
+            };
+
+            match std::fs::write(&file_path, &content) {
                 Ok(_) => {
                     results.push(AutomationImportResult {
                         name: automation.name,
@@ -846,4 +876,154 @@ pub fn import_automations(
     }
 
     Ok(results)
+}
+
+fn local_project_path_map() -> std::collections::BTreeMap<String, String> {
+    get_local_project_paths()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| (p.project_name, p.local_cwd))
+        .collect()
+}
+
+fn normalize_automation_content(
+    file_name: &str,
+    content: &str,
+    project_paths: &std::collections::BTreeMap<String, String>,
+) -> Result<String, String> {
+    if !looks_like_json_file(file_name) {
+        return Ok(content.to_string());
+    }
+
+    let mut value: serde_json::Value = match serde_json::from_str(content) {
+        Ok(value) => value,
+        Err(_) => return Ok(content.to_string()),
+    };
+
+    normalize_automation_json_value(&mut value, None, project_paths)
+        .map_err(|e| format!("路径无法自动映射，已跳过以避免 Codex 启动报错: {e}"))?;
+
+    serde_json::to_string_pretty(&value).map_err(|e| e.to_string())
+}
+
+fn looks_like_json_file(name: &str) -> bool {
+    name.ends_with(".json")
+        || name.ends_with(".jsonc")
+        || name.ends_with(".code-workspace")
+        || !name.contains('.')
+}
+
+fn normalize_automation_json_value(
+    value: &mut serde_json::Value,
+    key: Option<&str>,
+    project_paths: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map.iter_mut() {
+                normalize_automation_json_value(v, Some(k.as_str()), project_paths)?;
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                normalize_automation_json_value(item, key, project_paths)?;
+            }
+        }
+        serde_json::Value::String(raw) => {
+            if key.is_some_and(is_automation_path_key) && looks_like_path_value(raw) {
+                let mapped = map_path_for_this_device(raw, project_paths)
+                    .ok_or_else(|| format!("{key:?}={raw}"))?;
+                *raw = mapped;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn is_automation_path_key(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase().replace('-', "_");
+    matches!(
+        normalized.as_str(),
+        "cwd"
+            | "path"
+            | "root"
+            | "root_dir"
+            | "workdir"
+            | "work_dir"
+            | "working_dir"
+            | "workspace"
+            | "workspace_path"
+            | "project_path"
+            | "repo_path"
+            | "repository_path"
+            | "base_path"
+    )
+}
+
+fn looks_like_path_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.starts_with('/')
+        || trimmed.starts_with("~/")
+        || trimmed.starts_with("\\\\")
+        || trimmed.starts_with("//")
+        || (trimmed.len() > 2
+            && trimmed.as_bytes()[1] == b':'
+            && matches!(trimmed.as_bytes()[2], b'\\' | b'/'))
+}
+
+fn map_path_for_this_device(
+    raw: &str,
+    project_paths: &std::collections::BTreeMap<String, String>,
+) -> Option<String> {
+    let expanded = expand_home_path(raw);
+    if expanded.is_absolute() {
+        if expanded.exists() {
+            return Some(expanded.to_string_lossy().to_string());
+        }
+    }
+
+    let leaf = path_leaf(raw)?;
+    if let Some(local) = project_paths.get(&leaf) {
+        return Some(local.clone());
+    }
+
+    for root in common_project_roots() {
+        let candidate = root.join(&leaf);
+        if candidate.exists() && candidate.is_absolute() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+fn expand_home_path(raw: &str) -> std::path::PathBuf {
+    if raw == "~" {
+        return dirs_next::home_dir().unwrap_or_else(|| std::path::PathBuf::from(raw));
+    }
+    if let Some(rest) = raw.strip_prefix("~/") {
+        return dirs_next::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(rest);
+    }
+    std::path::PathBuf::from(raw)
+}
+
+fn path_leaf(raw: &str) -> Option<String> {
+    raw.replace('\\', "/")
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != "~")
+        .last()
+        .map(str::to_string)
+}
+
+fn common_project_roots() -> Vec<std::path::PathBuf> {
+    let home = dirs_next::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    vec![
+        home.join("workspace"),
+        home.join("work"),
+        home.join("projects"),
+        home.join("Documents"),
+    ]
 }

@@ -2187,6 +2187,12 @@ async function syncAutoDownload() {
       failed > 0 ? 'warn' : 'ok',
       `✓ 自动化任务下载完成：写入 ${imported} 个，跳过 ${skipped} 个，失败 ${failed} 个`
     );
+    if (failed > 0) {
+      importResults
+        .filter(r => !r.ok)
+        .slice(0, 10)
+        .forEach(r => syncLog('warn', `  · ${r.name}: ${r.error || '未知错误'}`));
+    }
   } catch (e) {
     syncLog('error', `自动化任务下载失败：${e.message || e}`);
   } finally {
