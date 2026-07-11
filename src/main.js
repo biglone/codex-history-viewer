@@ -34,12 +34,26 @@ const state = {
 // ===================================
 window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
+  loadAppVersion();
   await loadTotalCount();
   await loadAllSessions();
   setupGlobalSearch();
   setupLocalFilter();
   setupDetailSearch();
 });
+
+async function loadAppVersion() {
+  try {
+    const version = await invoke('get_app_version');
+    const el = document.getElementById('app-version');
+    if (el && version) {
+      el.textContent = version.startsWith('v') ? version : `v${version}`;
+      el.title = `当前应用版本 ${el.textContent}`;
+    }
+  } catch (e) {
+    console.error('Failed to load app version:', e);
+  }
+}
 
 async function loadTotalCount() {
   try {

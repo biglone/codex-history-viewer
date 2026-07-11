@@ -6,6 +6,11 @@ use std::fs;
 use walkdir::WalkDir;
 
 #[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 pub fn get_sessions(page: usize, page_size: usize) -> Result<Vec<Session>, String> {
     let conn = open_conn()?;
     let offset = page * page_size;

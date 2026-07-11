@@ -169,6 +169,15 @@ html, body {
   white-space: nowrap;
 }
 
+.app-version {
+  margin-top: 7px;
+  padding-left: 13px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
 .storage-dot {
   width: 6px;
   height: 6px;

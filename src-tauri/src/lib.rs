@@ -5,6 +5,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            commands::get_app_version,
             commands::get_sessions,
             commands::get_session_count,
             commands::get_session_messages,
