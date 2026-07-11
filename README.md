@@ -73,6 +73,22 @@ npm run build
 
 Release 中提供独立的跨平台 `codex-history-cli-*` 文件。该程序不启动 Tauri，Windows/macOS 可直接运行，Linux x64 使用 musl 静态构建；所有 CLI 产物都不依赖 GTK/WebKit 等桌面运行库。
 
+一键安装脚本：
+
+```bash
+# Linux / macOS，默认安装最新公开 Release 到 ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.sh | bash
+
+# 安装指定版本；draft/private Release 需要先 gh auth login，或设置 GH_TOKEN
+curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.sh | VERSION=v1.3.7 bash
+```
+
+```powershell
+# Windows PowerShell
+iwr https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.ps1 -OutFile install-cli.ps1
+.\install-cli.ps1 -Version v1.3.7 -AddToPath
+```
+
 | 系统 | Release 文件 |
 |------|--------------|
 | macOS Apple Silicon | `codex-history-cli-macOS-arm64` |

@@ -216,3 +216,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${GITHUB_REF_NAME}" "${CLI_ASSET}" --clobber
+
+  upload-install-scripts:
+    needs: build-headless-cli
+    runs-on: ubuntu-22.04
+    name: Upload install scripts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload install scripts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            scripts/install-cli.sh \
+            scripts/install-cli.ps1 \
+            --clobber
