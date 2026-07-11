@@ -25,8 +25,8 @@ codex-history-viewer/
   - **全局搜索**：跨所有会话文件（SQLite + JSONL）深度检索
 - 💬 **对话详情** — 侧边栏展示完整多轮问答，支持全屏查看，多段回答自动合并
 - ☁️ **云端同步** — 增量上传会话到自建服务端，跨设备查看历史
-- 📥 **Agy 会话导入** — 将 JSON、JSONL、TXT、Markdown 格式的 Agy 历史写入 Codex 本地历史
-- 🖥️ **Headless CLI** — 在服务器、SSH 和纯终端环境中执行 Agy 会话预览与导入
+- 📥 **Gemini / Agy 会话导入** — 将 JSON、JSONL、TXT、Markdown 格式的 Gemini 或 Agy 历史写入 Codex 本地历史
+- 🖥️ **Headless CLI** — 在服务器、SSH 和纯终端环境中执行 Gemini / Agy 会话预览与导入
 - ⌨️ **键盘快捷键** — `Cmd+F` / `Cmd+G` / `Esc`
 
 ### 数据来源
@@ -144,21 +144,21 @@ iwr https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/
 | Linux x64 | `codex-history-cli-Linux-x64` |
 | Linux ARM64 | `codex-history-cli-Linux-arm64`，面向常见 glibc 发行版 |
 
-#### CLI 导入 Agy 会话
+#### CLI 导入 Gemini / Agy 会话
 
 先预览，不写入 Codex：
 
 ```bash
-codex-history-cli agy-import preview --source ~/.agy --json
+codex-history-cli agy-import preview --source ~/.gemini --json
 ```
 
 确认候选会话无误后正式导入：
 
 ```bash
-codex-history-cli agy-import run --source ~/.agy
+codex-history-cli agy-import run --source ~/.gemini
 ```
 
-如果 Agy 历史不在 `~/.agy`，把 `--source` 换成实际目录或导出的 `.json/.jsonl/.ndjson/.txt/.md` 文件。
+不传 `--source` 时会优先自动探测 `GEMINI_HOME`、`~/.gemini`，再兼容探测 `AGY_HOME`、`~/.agy`。如果历史不在这些位置，把 `--source` 换成实际目录或导出的 `.json/.jsonl/.ndjson/.txt/.md` 文件。
 
 导入会写入：
 

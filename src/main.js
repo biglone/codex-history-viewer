@@ -93,7 +93,7 @@ function switchView(view) {
     localFilterBar.style.display = (view === 'projects' || view === 'agy-import') ? 'none' : 'flex';
   }
 
-  const titles = { all: '全部会话', projects: '按项目浏览', search: '全局搜索', 'agy-import': '导入 Agy 会话' };
+  const titles = { all: '全部会话', projects: '按项目浏览', search: '全局搜索', 'agy-import': '导入 Gemini / Agy 会话' };
   pageTitle.textContent = titles[view] || '会话';
 
   if (view === 'all') loadAllSessions();
@@ -289,14 +289,14 @@ function renderAgyImportView() {
       <section class="agy-import-toolbar">
         <div class="agy-import-copy">
           <div class="agy-import-kicker">本地转换</div>
-          <h2>把 Agy 历史写成 Codex 会话</h2>
-          <p>支持扫描 Agy 导出的 JSON、JSONL、TXT、Markdown 文件，并写入 <code>~/.codex/agy_imported/</code> 与本机 Codex 索引。</p>
+          <h2>把 Gemini / Agy 历史写成 Codex 会话</h2>
+          <p>支持扫描 Gemini 或 Agy 导出的 JSON、JSONL、TXT、Markdown 文件，并写入 <code>~/.codex/agy_imported/</code> 与本机 Codex 索引。</p>
         </div>
         <div class="agy-import-controls">
           <label class="agy-path-label" for="agy-source-path">历史文件或目录路径</label>
           <div class="agy-path-row">
             <input id="agy-source-path" class="agy-path-input" type="text"
-              placeholder="留空自动探测，或填写 ~/.agy / 导出的 conversation.jsonl" autocomplete="off" />
+              placeholder="留空自动探测，或填写 ~/.gemini / 导出的 conversation.jsonl" autocomplete="off" />
             <button class="sync-btn sync-btn-secondary" id="agy-preview-btn" onclick="agyPreviewImport()">扫描</button>
             <button class="sync-btn sync-btn-primary" id="agy-import-btn" onclick="agyRunImport()" disabled>导入</button>
           </div>
@@ -304,7 +304,7 @@ function renderAgyImportView() {
       </section>
 
       <section class="agy-import-status" id="agy-import-status">
-        <div class="agy-empty-hint">先扫描 Agy 历史目录，确认候选会话后再导入。</div>
+        <div class="agy-empty-hint">先扫描 Gemini / Agy 历史目录，确认候选会话后再导入。</div>
       </section>
 
       <section class="agy-import-list" id="agy-import-list"></section>
@@ -384,7 +384,7 @@ function renderAgyPreview(preview) {
   const items = (preview.sessions || []).map(s => `
     <div class="agy-session-row">
       <div class="agy-session-main">
-        <div class="agy-session-title">${escHtml(s.title || '未命名 Agy 会话')}</div>
+        <div class="agy-session-title">${escHtml(s.title || '未命名 Gemini / Agy 会话')}</div>
         <div class="agy-session-meta">
           <span>${formatTime(s.created_at_ms)}</span>
           <span>${s.message_count} 条消息</span>
@@ -473,6 +473,11 @@ function renderAgyDefaultPaths(paths) {
 
 function defaultAgyProbePaths() {
   return [
+    '$GEMINI_HOME',
+    '~/.gemini',
+    '~/.gemini/conversations',
+    '~/.gemini/sessions',
+    '~/.gemini/history',
     '$AGY_HOME',
     '~/.agy',
     '~/.agy/sessions',
@@ -482,9 +487,6 @@ function defaultAgyProbePaths() {
     '~/.local/share/agy',
     '~/.local/share/agy/sessions',
     '~/.cache/agy',
-    '~/.gemini/conversations',
-    '~/.gemini/sessions',
-    '~/.gemini/history',
   ];
 }
 

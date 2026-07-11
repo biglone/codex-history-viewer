@@ -105,8 +105,8 @@ fn usage() -> String {
         "  codex-history-cli agy-import run     [--json] [--source PATH|PATH]",
         "",
         "Examples:",
-        "  codex-history-cli agy-import preview ~/.agy --json",
-        "  codex-history-cli agy-import run ~/exports/agy-history.jsonl",
+        "  codex-history-cli agy-import preview ~/.gemini --json",
+        "  codex-history-cli agy-import run ~/exports/gemini-history.jsonl",
     ]
     .join("\n")
 }

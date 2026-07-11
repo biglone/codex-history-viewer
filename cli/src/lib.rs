@@ -270,7 +270,7 @@ fn resolve_agy_import_root(source_path: Option<String>) -> Result<(PathBuf, Vec<
     }
 
     Err(
-        "default Agy history directory not found; pass a JSON/JSONL/TXT file or directory path"
+        "default Gemini/Agy history directory not found; pass a JSON/JSONL/TXT file or directory path"
             .to_string(),
     )
 }
@@ -278,12 +278,21 @@ fn resolve_agy_import_root(source_path: Option<String>) -> Result<(PathBuf, Vec<
 fn default_agy_paths() -> Vec<String> {
     let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let mut paths = Vec::new();
+    if let Ok(env_home) = std::env::var("GEMINI_HOME") {
+        if !env_home.trim().is_empty() {
+            push_default_path(&mut paths, expand_home_path(&env_home));
+        }
+    }
     if let Ok(env_home) = std::env::var("AGY_HOME") {
         if !env_home.trim().is_empty() {
-            paths.push(expand_home_path(&env_home).to_string_lossy().to_string());
+            push_default_path(&mut paths, expand_home_path(&env_home));
         }
     }
     for rel in [
+        ".gemini",
+        ".gemini/conversations",
+        ".gemini/sessions",
+        ".gemini/history",
         ".agy",
         ".agy/sessions",
         ".agy/conversations",
@@ -292,15 +301,17 @@ fn default_agy_paths() -> Vec<String> {
         ".local/share/agy",
         ".local/share/agy/sessions",
         ".cache/agy",
-        ".gemini/conversations",
-        ".gemini/sessions",
-        ".gemini/history",
     ] {
-        paths.push(home.join(rel).to_string_lossy().to_string());
+        push_default_path(&mut paths, home.join(rel));
     }
-    paths.sort();
-    paths.dedup();
     paths
+}
+
+fn push_default_path(paths: &mut Vec<String>, path: PathBuf) {
+    let path = path.to_string_lossy().to_string();
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
 }
 
 fn expand_home_path(raw: &str) -> PathBuf {
