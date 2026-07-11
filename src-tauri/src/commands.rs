@@ -1003,7 +1003,7 @@ fn normalize_automation_json_value(
             }
         }
         serde_json::Value::String(raw) => {
-            if key.is_some_and(is_automation_path_key) && looks_like_path_value(raw) {
+            if looks_like_path_value(raw) {
                 let mapped = map_path_for_this_device(raw, project_paths)
                     .ok_or_else(|| format!("{key:?}={raw}"))?;
                 *raw = mapped;
@@ -1012,75 +1012,6 @@ fn normalize_automation_json_value(
         _ => {}
     }
     Ok(())
-}
-
-fn is_automation_path_key(key: &str) -> bool {
-    let normalized = key.to_ascii_lowercase().replace('-', "_");
-    matches!(
-        normalized.as_str(),
-        "cwd"
-            | "cwd_path"
-            | "cwdpath"
-            | "path"
-            | "paths"
-            | "absolute"
-            | "absolute_path"
-            | "absolutepath"
-            | "root"
-            | "roots"
-            | "root_path"
-            | "rootpath"
-            | "root_dir"
-            | "rootdir"
-            | "workdir"
-            | "work_dir"
-            | "workingdir"
-            | "working_dir"
-            | "working_directory"
-            | "workingdirectory"
-            | "worktree"
-            | "worktree_path"
-            | "worktreepath"
-            | "workspace"
-            | "workspace_root"
-            | "workspaceroot"
-            | "workspace_path"
-            | "workspacepath"
-            | "workspace_folder"
-            | "workspacefolder"
-            | "workspace_folders"
-            | "workspacefolders"
-            | "project"
-            | "project_root"
-            | "projectroot"
-            | "project_dir"
-            | "projectdir"
-            | "project_directory"
-            | "projectdirectory"
-            | "project_path"
-            | "projectpath"
-            | "repo"
-            | "repo_root"
-            | "reporoot"
-            | "repo_path"
-            | "repopath"
-            | "repository"
-            | "repository_root"
-            | "repositoryroot"
-            | "repository_path"
-            | "repositorypath"
-            | "base"
-            | "base_path"
-            | "basepath"
-            | "dir"
-            | "dirs"
-            | "directory"
-            | "directories"
-            | "folder"
-            | "folders"
-            | "folder_path"
-            | "folderpath"
-    )
 }
 
 fn looks_like_path_value(value: &str) -> bool {
