@@ -1030,40 +1030,23 @@ fn map_path_for_this_device(
     project_paths: &std::collections::BTreeMap<String, String>,
 ) -> Option<String> {
     let expanded = expand_home_path(raw);
-    if expanded.is_absolute() {
-        if expanded.exists() {
-            return Some(expanded.to_string_lossy().to_string());
-        }
-    }
-
-    let leaf = path_leaf(raw);
-    if let Some(leaf) = leaf.as_ref() {
-        if let Some(local) = project_paths.get(leaf) {
-            return Some(local.clone());
-        }
-
-        for root in common_project_roots() {
-            let candidate = root.join(leaf);
-            if candidate.exists() && candidate.is_absolute() {
-                return Some(candidate.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    if expanded.is_absolute() && std::fs::create_dir_all(&expanded).is_ok() {
+    if expanded.is_absolute() && expanded.exists() {
         return Some(expanded.to_string_lossy().to_string());
     }
 
-    if let Some(leaf) = leaf {
-        for root in common_project_roots() {
-            let candidate = root.join(&leaf);
-            if candidate.is_absolute() && std::fs::create_dir_all(&candidate).is_ok() {
-                return Some(candidate.to_string_lossy().to_string());
-            }
+    let leaf = path_leaf(raw)?;
+    if let Some(local) = project_paths.get(&leaf) {
+        return Some(local.clone());
+    }
+
+    for root in common_project_roots() {
+        let candidate = root.join(&leaf);
+        if candidate.exists() && candidate.is_absolute() {
+            return Some(candidate.to_string_lossy().to_string());
         }
     }
 
-    None
+    workspace_project_dir(&leaf)
 }
 
 fn expand_home_path(raw: &str) -> std::path::PathBuf {
@@ -1094,4 +1077,15 @@ fn common_project_roots() -> Vec<std::path::PathBuf> {
         home.join("projects"),
         home.join("Documents"),
     ]
+}
+
+fn workspace_project_dir(leaf: &str) -> Option<String> {
+    if leaf.trim().is_empty() {
+        return None;
+    }
+
+    let home = dirs_next::home_dir()?;
+    let workspace = home.join("workspace").join(leaf);
+    std::fs::create_dir_all(&workspace).ok()?;
+    Some(workspace.to_string_lossy().to_string())
 }
