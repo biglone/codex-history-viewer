@@ -4,6 +4,20 @@ set -euo pipefail
 REPO="${REPO:-biglone/codex-history-viewer}"
 VERSION="${VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-}"
+tmp_dir=""
+mount_dir=""
+
+cleanup() {
+  if [[ -n "${mount_dir:-}" ]]; then
+    hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true
+    rm -rf "$mount_dir"
+  fi
+  if [[ -n "${tmp_dir:-}" ]]; then
+    rm -rf "$tmp_dir"
+  fi
+}
+
+trap cleanup EXIT
 
 usage() {
   cat <<'EOF'
@@ -149,7 +163,7 @@ EOF
 }
 
 install_macos_dmg() {
-  local arch="$1" tmp_dir="$2" stable pattern dmg mount_dir app target_dir
+  local arch="$1" tmp_dir="$2" stable pattern dmg app target_dir
   case "$arch" in
     arm64|aarch64)
       stable="codex-history-viewer-macOS-arm64.dmg"
@@ -176,7 +190,6 @@ install_macos_dmg() {
 
   mount_dir="$(mktemp -d)"
   hdiutil attach "$dmg" -mountpoint "$mount_dir" -nobrowse -quiet
-  trap 'hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true; rm -rf "$tmp_dir" "$mount_dir"' EXIT
 
   app="$(find "$mount_dir" -maxdepth 1 -type d -name "*.app" -print -quit)"
   if [[ -z "$app" ]]; then
@@ -192,7 +205,6 @@ install_macos_dmg() {
 os="$(uname -s)"
 arch="$(uname -m)"
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
 
 case "$os" in
   Linux) install_linux_appimage "$arch" "$tmp_dir" ;;
