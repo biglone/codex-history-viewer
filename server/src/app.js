@@ -72,13 +72,18 @@ fastify.get('/', async () => ({
     syncCheck:             'POST   /api/sync/check',
     syncPull:              'POST   /api/sync/pull',
     listSessions:          'GET    /api/sessions',
+    listDevices:           'GET    /api/sessions/devices',
+    manageSessions:        'GET    /api/sessions/manage-list',
     searchSessions:        'GET    /api/sessions/search?q=keyword',
     getMessages:           'GET    /api/sessions/:id/messages',
     deleteSession:         'DELETE /api/sessions/:id',
+    deleteSessionsBatch:   'POST   /api/sessions/delete-batch',
     automationsUpload:     'POST   /api/automations/upload',
     automationsCheck:      'POST   /api/automations/check',
     automationsPull:       'POST   /api/automations/pull',
+    automationsList:       'GET    /api/automations/list',
     automationsStats:      'GET    /api/automations/stats',
+    automationsDelete:     'POST   /api/automations/delete-batch',
   },
 }));
 

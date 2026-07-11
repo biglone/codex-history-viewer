@@ -2229,6 +2229,25 @@ const manageState = {
   automations: [],
 };
 
+function makeManageHttpError(res, path) {
+  const err = new Error(`HTTP ${res.status}`);
+  err.status = res.status;
+  err.path = path;
+  return err;
+}
+
+async function manageFetchJson(cfg, path, options = {}) {
+  const res = await fetch(`${cfg.server_url}${path}`, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${cfg.api_token}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) throw makeManageHttpError(res, path);
+  return res.json();
+}
+
 function toggleManagePanel() {
   const body   = document.getElementById('sync-manage-body');
   const toggle = document.getElementById('sync-manage-toggle');
@@ -2254,12 +2273,9 @@ async function loadManageList() {
 
 async function _loadManageDevices(cfg) {
   try {
-    const res = await fetch(`${cfg.server_url}/api/sessions/devices`, {
-      headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+    const data = await manageFetchJson(cfg, '/api/sessions/devices', {
       signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) return;
-    const data = await res.json();
     const sel = document.getElementById('sync-manage-device-filter');
     const cur = sel.value;
     sel.innerHTML = '<option value="">全部设备</option>';
@@ -2270,7 +2286,11 @@ async function _loadManageDevices(cfg) {
       if (d.id === cur) opt.selected = true;
       sel.appendChild(opt);
     }
-  } catch (_) {}
+  } catch (e) {
+    if (e.status === 404) {
+      syncLog('warn', '当前服务端不支持设备筛选接口，线上数据管理将仅显示全部设备');
+    }
+  }
 }
 
 async function _loadManageSessions(cfg) {
@@ -2283,12 +2303,18 @@ async function _loadManageSessions(cfg) {
   try {
     const params = new URLSearchParams({ page: manageState.sessionPage, pageSize: manageState.sessionPageSize });
     if (deviceId) params.set('device_id', deviceId);
-    const res = await fetch(`${cfg.server_url}/api/sessions/manage-list?${params}`, {
-      headers: { 'Authorization': `Bearer ${cfg.api_token}` },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    let data;
+    try {
+      data = await manageFetchJson(cfg, `/api/sessions/manage-list?${params}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      syncLog('warn', '当前服务端缺少线上数据管理接口，已降级使用旧版会话列表接口');
+      data = await manageFetchJson(cfg, `/api/sessions?${params}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+    }
 
     manageState.sessions     = data.sessions || [];
     manageState.sessionTotal = data.total    || 0;
@@ -2333,7 +2359,7 @@ async function _loadManageSessions(cfg) {
                onclick="manageSessionPage(${manageState.sessionPage + 1})">下一页</button>`
       : '';
   } catch (e) {
-    listEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px;">加载失败：${escHtml(e.message)}</div>`;
+    listEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px;">加载失败：${escHtml(e.message)}${e.path ? `（${escHtml(e.path)}）` : ''}</div>`;
   }
 }
 
@@ -2345,12 +2371,9 @@ async function _loadManageAutomations(cfg) {
   listEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">加载中...</div>';
   try {
     const params = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : '';
-    const res = await fetch(`${cfg.server_url}/api/automations/list${params}`, {
-      headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+    const data = await manageFetchJson(cfg, `/api/automations/list${params}`, {
       signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
 
     manageState.automations = data.automations || [];
     countEl.textContent = `（共 ${manageState.automations.length} 条）`;
@@ -2381,7 +2404,11 @@ async function _loadManageAutomations(cfg) {
       listEl.appendChild(item);
     }
   } catch (e) {
-    listEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px;">加载失败：${escHtml(e.message)}</div>`;
+    if (e.status === 404) {
+      listEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:12px;">当前服务端版本不支持自动化任务线上管理，请更新同步服务端后再使用。</div>';
+    } else {
+      listEl.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px;">加载失败：${escHtml(e.message)}${e.path ? `（${escHtml(e.path)}）` : ''}</div>`;
+    }
   }
 }
 
@@ -2412,7 +2439,16 @@ async function manageDeleteOne(type, key) {
         body: JSON.stringify({ ids: [key] }),
         signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (res.status === 404) {
+        const fallbackRes = await fetch(`${cfg.server_url}/api/sessions/${encodeURIComponent(key)}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!fallbackRes.ok) throw makeManageHttpError(fallbackRes, `/api/sessions/${key}`);
+      } else if (!res.ok) {
+        throw makeManageHttpError(res, '/api/sessions/delete-batch');
+      }
     } else {
       const [device_id, name] = key.split('|||');
       const res = await fetch(`${cfg.server_url}/api/automations/delete-batch`, {
@@ -2421,12 +2457,12 @@ async function manageDeleteOne(type, key) {
         body: JSON.stringify({ items: [{ device_id, name }] }),
         signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw makeManageHttpError(res, '/api/automations/delete-batch');
     }
     syncLog('ok', `已删除 1 条线上${type === 'session' ? '会话' : '自动化任务'}`);
     await loadManageList();
   } catch (e) {
-    syncLog('error', `删除失败：${e.message}`);
+    syncLog('error', `删除失败：${e.message}${e.path ? `（${e.path}）` : ''}`);
   }
 }
 
@@ -2446,9 +2482,23 @@ async function manageDeleteSelected(type) {
         body: JSON.stringify({ ids }),
         signal: AbortSignal.timeout(30000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      syncLog('ok', `已删除 ${data.deleted} 条线上会话`);
+      if (res.status === 404) {
+        let deleted = 0;
+        for (const id of ids) {
+          const fallbackRes = await fetch(`${cfg.server_url}/api/sessions/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${cfg.api_token}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (fallbackRes.ok) deleted += 1;
+          else throw makeManageHttpError(fallbackRes, `/api/sessions/${id}`);
+        }
+        syncLog('ok', `已删除 ${deleted} 条线上会话`);
+      } else {
+        if (!res.ok) throw makeManageHttpError(res, '/api/sessions/delete-batch');
+        const data = await res.json();
+        syncLog('ok', `已删除 ${data.deleted} 条线上会话`);
+      }
     } else {
       const items = checked.map(cb => {
         const [device_id, name] = cb.dataset.key.split('|||');
@@ -2460,12 +2510,12 @@ async function manageDeleteSelected(type) {
         body: JSON.stringify({ items }),
         signal: AbortSignal.timeout(15000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw makeManageHttpError(res, '/api/automations/delete-batch');
       const data = await res.json();
       syncLog('ok', `已删除 ${data.deleted} 条线上自动化任务`);
     }
     await loadManageList();
   } catch (e) {
-    syncLog('error', `批量删除失败：${e.message}`);
+    syncLog('error', `批量删除失败：${e.message}${e.path ? `（${e.path}）` : ''}`);
   }
 }

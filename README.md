@@ -237,8 +237,14 @@ npm run dev
 | `POST` | `/api/sessions/upload` | 上传单条会话 |
 | `POST` | `/api/sessions/upload-batch` | 批量上传 |
 | `GET` | `/api/sessions` | 分页列表 |
+| `GET` | `/api/sessions/devices` | 设备列表（线上数据管理） |
+| `GET` | `/api/sessions/manage-list` | 会话管理列表 |
 | `GET` | `/api/sessions/search?q=` | 关键词搜索 |
 | `GET` | `/api/sessions/:id/messages` | 获取消息内容 |
+| `DELETE` | `/api/sessions/:id` | 删除单条会话 |
+| `POST` | `/api/sessions/delete-batch` | 批量删除线上会话 |
+| `GET` | `/api/automations/list` | 自动化任务管理列表 |
+| `POST` | `/api/automations/delete-batch` | 批量删除线上自动化任务 |
 
 ---
 
