@@ -69,15 +69,21 @@ npm run build
 > echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 > ```
 
-### 桌面应用在线安装
+### 安装与更新
 
-Release 中的 GUI 安装包也支持在线安装脚本。Linux x64 会安装 AppImage 到 `~/.local/bin/codex-history-viewer` 并创建 desktop entry；macOS 会下载 DMG 并复制 `.app` 到 `/Applications`（无权限时改用 `~/Applications`）；Windows 会下载并运行安装器。
+Release 同时提供桌面 GUI 安装包和纯终端 CLI。GUI 适合本机查看、搜索和同步会话；CLI 适合服务器、SSH、无桌面环境和自动化脚本。
+
+当前示例版本为 `v1.3.8`。如果 Release 仍是 draft 或仓库是 private，需要先执行 `gh auth login`，或设置有仓库读取权限的 `GH_TOKEN`。
+
+#### 桌面应用在线安装
+
+Linux x64 会安装 AppImage 到 `~/.local/bin/codex-history-viewer` 并创建 desktop entry；macOS 会下载 DMG 并复制 `.app` 到 `/Applications`，无权限时改用 `~/Applications`；Windows 会下载并运行安装器。
 
 ```bash
-# Linux x64 / macOS，默认安装最新公开 Release
+# Linux x64 / macOS，安装最新公开 Release
 curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-gui.sh | bash
 
-# 安装指定版本；draft/private Release 需要先 gh auth login，或设置 GH_TOKEN
+# 安装指定版本
 curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-gui.sh | VERSION=v1.3.8 bash
 ```
 
@@ -87,61 +93,60 @@ iwr https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/
 .\install-gui.ps1 -Version v1.3.8
 ```
 
+可用 GUI Release 资产：
+
+| 系统 | 稳定文件名 |
+|------|------------|
+| macOS Apple Silicon | `codex-history-viewer-macOS-arm64.dmg` |
+| macOS Intel | `codex-history-viewer-macOS-x64.dmg` |
+| Windows x64 | `codex-history-viewer-Windows-x64-setup.exe` / `codex-history-viewer-Windows-x64.msi` |
+| Linux x64 | `codex-history-viewer-Linux-x64.AppImage` / `.deb` / `.rpm` |
+
 GUI 的 Linux 安装包目前只发布 x64；Linux ARM64 纯终端环境请使用 `codex-history-cli-Linux-arm64`。
 
-### 纯终端 CLI
+#### 纯终端 CLI 在线安装
 
-Release 中提供独立的跨平台 `codex-history-cli-*` 文件。该程序不启动 Tauri，Windows/macOS 可直接运行，Linux x64 使用 musl 静态构建；所有 CLI 产物都不依赖 GTK/WebKit 等桌面运行库。
-
-一键安装脚本：
+CLI 是独立二进制，不启动 Tauri。Windows/macOS 可直接运行；Linux x64 使用 musl 静态构建；所有 CLI 产物都不依赖 GTK/WebKit 等桌面运行库。
 
 ```bash
-# Linux / macOS，默认安装最新公开 Release 到 ~/.local/bin
+# Linux / macOS，安装最新公开 Release 到 ~/.local/bin
 curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.sh | bash
 
-# 安装指定版本；draft/private Release 需要先 gh auth login，或设置 GH_TOKEN
-curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.sh | VERSION=v1.3.7 bash
+# 安装指定版本
+curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.sh | VERSION=v1.3.8 bash
 ```
 
 ```powershell
 # Windows PowerShell
 iwr https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-cli.ps1 -OutFile install-cli.ps1
-.\install-cli.ps1 -Version v1.3.7 -AddToPath
+.\install-cli.ps1 -Version v1.3.8 -AddToPath
 ```
 
-| 系统 | Release 文件 |
-|------|--------------|
+可用 CLI Release 资产：
+
+| 系统 | 稳定文件名 |
+|------|------------|
 | macOS Apple Silicon | `codex-history-cli-macOS-arm64` |
 | macOS Intel | `codex-history-cli-macOS-x64` |
 | Windows x64 | `codex-history-cli-Windows-x64.exe` |
 | Linux x64 | `codex-history-cli-Linux-x64` |
 | Linux ARM64 | `codex-history-cli-Linux-arm64`，面向常见 glibc 发行版 |
 
-```bash
-# Linux 示例
-chmod +x codex-history-cli-Linux-x64
-sudo install codex-history-cli-Linux-x64 /usr/local/bin/codex-history-cli
+#### CLI 导入 Agy 会话
 
-# macOS 示例
-chmod +x codex-history-cli-macOS-arm64
-./codex-history-cli-macOS-arm64 agy-import preview --source ~/.agy
-```
-
-```powershell
-# Windows PowerShell 示例
-.\codex-history-cli-Windows-x64.exe agy-import preview --source "$env:USERPROFILE\.agy"
-```
+先预览，不写入 Codex：
 
 ```bash
-# 预览可导入会话，不写入 Codex
-codex-history-cli agy-import preview ~/.agy
-
-# JSON 输出，适合脚本处理
-codex-history-cli agy-import preview --source ~/agy-export --json
-
-# 正式写入 Codex 会话历史
-codex-history-cli agy-import run --source ~/agy-export
+codex-history-cli agy-import preview --source ~/.agy --json
 ```
+
+确认候选会话无误后正式导入：
+
+```bash
+codex-history-cli agy-import run --source ~/.agy
+```
+
+如果 Agy 历史不在 `~/.agy`，把 `--source` 换成实际目录或导出的 `.json/.jsonl/.ndjson/.txt/.md` 文件。
 
 导入会写入：
 
@@ -150,13 +155,9 @@ codex-history-cli agy-import run --source ~/agy-export
 ~/.codex/agy_imported/<session-id>.jsonl
 ```
 
-如果设置了 `CODEX_HOME` 或 `CODEX_SQLITE_HOME`，CLI 会按 Codex 的环境变量读取对应目录。
+如果设置了 `CODEX_HOME` 或 `CODEX_SQLITE_HOME`，CLI 会按 Codex 的环境变量读取对应目录。重复导入同一版本时会返回 `skipped`，失败时进程退出码为非零。
 
-支持 `.json`、`.jsonl`、`.ndjson`、`.txt`、`.md`。重复导入同一版本时会返回 `skipped`，失败时进程退出码为非零。
-
-用户下载 Release 中的 CLI 二进制后无需安装 Rust、Node.js、Tauri、GTK 或 WebKit。Rust 和桌面开发库只用于从源码构建项目。
-
-从源码构建 CLI：
+#### 从源码构建 CLI
 
 ```bash
 cargo build --manifest-path cli/Cargo.toml --release
