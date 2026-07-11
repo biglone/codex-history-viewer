@@ -764,7 +764,18 @@ pub fn import_automations(
         if is_dir_pack {
             // ── 目录格式：name="my-task/" content=JSON{filename->content} ──
             let dir_name = automation.name.trim_end_matches('/');
-            let target_dir = automations_dir.join(dir_name);
+            let target_dir = match automation_target_path(&automations_dir, dir_name) {
+                Ok(path) => path,
+                Err(e) => {
+                    results.push(AutomationImportResult {
+                        name: automation.name,
+                        ok: false,
+                        skipped: false,
+                        error: Some(e),
+                    });
+                    continue;
+                }
+            };
 
             // 解包 content JSON
             let sub_files: std::collections::BTreeMap<String, String> =
@@ -793,10 +804,26 @@ pub fn import_automations(
 
             let mut any_written = false;
             for (fname, fcontent) in &sub_files {
-                let fpath = target_dir.join(fname);
+                let fpath = match automation_target_path(&target_dir, fname) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        results.push(AutomationImportResult {
+                            name: format!("{}{}", automation.name, fname),
+                            ok: false,
+                            skipped: false,
+                            error: Some(e),
+                        });
+                        continue;
+                    }
+                };
                 match normalize_automation_content(fname, fcontent, &project_paths) {
                     Ok(normalized) => {
-                        if std::fs::write(&fpath, normalized).is_ok() {
+                        if ensure_parent_dir(&fpath)
+                            .and_then(|_| {
+                                std::fs::write(&fpath, normalized).map_err(|e| e.to_string())
+                            })
+                            .is_ok()
+                        {
                             any_written = true;
                         }
                     }
@@ -819,7 +846,18 @@ pub fn import_automations(
             });
         } else {
             // ── 普通文件格式 ──────────────────────────────────────────────────
-            let file_path = automations_dir.join(&automation.name);
+            let file_path = match automation_target_path(&automations_dir, &automation.name) {
+                Ok(path) => path,
+                Err(e) => {
+                    results.push(AutomationImportResult {
+                        name: automation.name,
+                        ok: false,
+                        skipped: false,
+                        error: Some(e),
+                    });
+                    continue;
+                }
+            };
 
             // 若本地已存在该文件，对比修改时间
             if file_path.exists() {
@@ -859,7 +897,9 @@ pub fn import_automations(
                 }
             };
 
-            match std::fs::write(&file_path, &content) {
+            match ensure_parent_dir(&file_path)
+                .and_then(|_| std::fs::write(&file_path, &content).map_err(|e| e.to_string()))
+            {
                 Ok(_) => {
                     results.push(AutomationImportResult {
                         name: automation.name,
@@ -881,6 +921,34 @@ pub fn import_automations(
     }
 
     Ok(results)
+}
+
+fn automation_target_path(
+    base: &std::path::Path,
+    relative_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    if relative_name.trim().is_empty() {
+        return Err("automation 文件名为空".to_string());
+    }
+
+    let rel = std::path::Path::new(relative_name);
+    for component in rel.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            _ => {
+                return Err(format!("拒绝不安全的 automation 路径: {}", relative_name));
+            }
+        }
+    }
+
+    Ok(base.join(rel))
+}
+
+fn ensure_parent_dir(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn local_project_path_map() -> std::collections::BTreeMap<String, String> {
@@ -988,15 +1056,30 @@ fn map_path_for_this_device(
         }
     }
 
-    let leaf = path_leaf(raw)?;
-    if let Some(local) = project_paths.get(&leaf) {
-        return Some(local.clone());
+    let leaf = path_leaf(raw);
+    if let Some(leaf) = leaf.as_ref() {
+        if let Some(local) = project_paths.get(leaf) {
+            return Some(local.clone());
+        }
+
+        for root in common_project_roots() {
+            let candidate = root.join(leaf);
+            if candidate.exists() && candidate.is_absolute() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
     }
 
-    for root in common_project_roots() {
-        let candidate = root.join(&leaf);
-        if candidate.exists() && candidate.is_absolute() {
-            return Some(candidate.to_string_lossy().to_string());
+    if expanded.is_absolute() && std::fs::create_dir_all(&expanded).is_ok() {
+        return Some(expanded.to_string_lossy().to_string());
+    }
+
+    if let Some(leaf) = leaf {
+        for root in common_project_roots() {
+            let candidate = root.join(&leaf);
+            if candidate.is_absolute() && std::fs::create_dir_all(&candidate).is_ok() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
         }
     }
 
