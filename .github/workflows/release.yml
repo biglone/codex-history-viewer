@@ -217,20 +217,56 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${GITHUB_REF_NAME}" "${CLI_ASSET}" --clobber
 
-  upload-install-scripts:
+  upload-release-extras:
     needs: build-headless-cli
     runs-on: ubuntu-22.04
-    name: Upload install scripts
+    name: Upload release extras
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Upload GUI stable aliases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          upload_alias() {
+            local pattern="$1"
+            local alias="$2"
+            local tmp
+            tmp="$(mktemp -d)"
+            if gh release download "${GITHUB_REF_NAME}" --pattern "$pattern" --dir "$tmp" --clobber; then
+              local source
+              source="$(find "$tmp" -maxdepth 1 -type f -name "$pattern" -print -quit)"
+              if [ -n "$source" ]; then
+                cp "$source" "$alias"
+                gh release upload "${GITHUB_REF_NAME}" "$alias" --clobber
+              else
+                echo "warning: no asset matched $pattern" >&2
+              fi
+            else
+              echo "warning: failed to download asset for pattern $pattern" >&2
+            fi
+            rm -rf "$tmp"
+          }
+
+          upload_alias 'Codex.History.Viewer_*_aarch64.dmg' 'codex-history-viewer-macOS-arm64.dmg'
+          upload_alias 'Codex.History.Viewer_*_x64.dmg' 'codex-history-viewer-macOS-x64.dmg'
+          upload_alias 'Codex.History.Viewer_*_x64-setup.exe' 'codex-history-viewer-Windows-x64-setup.exe'
+          upload_alias 'Codex.History.Viewer_*_x64_en-US.msi' 'codex-history-viewer-Windows-x64.msi'
+          upload_alias 'Codex.History.Viewer_*_amd64.AppImage' 'codex-history-viewer-Linux-x64.AppImage'
+          upload_alias 'Codex.History.Viewer_*_amd64.deb' 'codex-history-viewer-Linux-x64.deb'
+          upload_alias 'Codex.History.Viewer-*-1.x86_64.rpm' 'codex-history-viewer-Linux-x64.rpm'
 
       - name: Upload install scripts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${GITHUB_REF_NAME}" \
+            scripts/install-gui.sh \
+            scripts/install-gui.ps1 \
             scripts/install-cli.sh \
             scripts/install-cli.ps1 \
             --clobber

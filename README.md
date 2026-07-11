@@ -69,6 +69,26 @@ npm run build
 > echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 > ```
 
+### 桌面应用在线安装
+
+Release 中的 GUI 安装包也支持在线安装脚本。Linux x64 会安装 AppImage 到 `~/.local/bin/codex-history-viewer` 并创建 desktop entry；macOS 会下载 DMG 并复制 `.app` 到 `/Applications`（无权限时改用 `~/Applications`）；Windows 会下载并运行安装器。
+
+```bash
+# Linux x64 / macOS，默认安装最新公开 Release
+curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-gui.sh | bash
+
+# 安装指定版本；draft/private Release 需要先 gh auth login，或设置 GH_TOKEN
+curl -fsSL https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-gui.sh | VERSION=v1.3.8 bash
+```
+
+```powershell
+# Windows PowerShell
+iwr https://raw.githubusercontent.com/biglone/codex-history-viewer/main/scripts/install-gui.ps1 -OutFile install-gui.ps1
+.\install-gui.ps1 -Version v1.3.8
+```
+
+GUI 的 Linux 安装包目前只发布 x64；Linux ARM64 纯终端环境请使用 `codex-history-cli-Linux-arm64`。
+
 ### 纯终端 CLI
 
 Release 中提供独立的跨平台 `codex-history-cli-*` 文件。该程序不启动 Tauri，Windows/macOS 可直接运行，Linux x64 使用 musl 静态构建；所有 CLI 产物都不依赖 GTK/WebKit 等桌面运行库。
