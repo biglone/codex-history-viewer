@@ -270,3 +270,9 @@ jobs:
             scripts/install-cli.sh \
             scripts/install-cli.ps1 \
             --clobber
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --prerelease=false

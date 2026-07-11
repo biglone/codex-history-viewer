@@ -69,6 +69,18 @@ npm run build
 > echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 > ```
 
+### 发布流程
+
+GitHub Actions 负责构建和发布。维护者只需要推送 `v*` tag：
+
+```bash
+git tag -a v1.3.10 -m "v1.3.10"
+git push origin main
+git push origin v1.3.10
+```
+
+Release workflow 会先创建 draft，等待 GUI、CLI、稳定文件名别名和安装脚本全部上传完成后，最后一步自动公开 Release。正常情况下不需要再到 GitHub 页面手动点击 Publish。
+
 ### 安装与更新
 
 Release 同时提供桌面 GUI 安装包和纯终端 CLI。GUI 适合本机查看、搜索和同步会话；CLI 适合服务器、SSH、无桌面环境和自动化脚本。
