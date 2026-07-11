@@ -149,6 +149,20 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+      - name: Upload GUI workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-${{ matrix.label }}
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/**/release/bundle/**/*.dmg
+            src-tauri/target/**/release/bundle/**/*.app.tar.gz
+            src-tauri/target/**/release/bundle/**/*.msi
+            src-tauri/target/**/release/bundle/**/*-setup.exe
+            src-tauri/target/**/release/bundle/**/*.AppImage
+            src-tauri/target/**/release/bundle/**/*.deb
+            src-tauri/target/**/release/bundle/**/*.rpm
+
   build-headless-cli:
     needs: build-tauri
     strategy:
@@ -226,6 +240,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Download GUI workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: gui-artifacts
+          pattern: gui-*
+          merge-multiple: true
+
+      - name: Upload GUI artifacts from workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r -d '' asset; do
+            echo "Uploading GUI asset: $asset"
+            gh release upload "${GITHUB_REF_NAME}" "$asset" --clobber
+          done < <(
+            find gui-artifacts -type f \( \
+              -name '*.dmg' -o \
+              -name '*.app.tar.gz' -o \
+              -name '*.msi' -o \
+              -name '*-setup.exe' -o \
+              -name '*.AppImage' -o \
+              -name '*.deb' -o \
+              -name '*.rpm' \
+            \) -print0
+          )
+
       - name: Upload GUI stable aliases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -270,6 +312,48 @@ jobs:
             scripts/install-cli.sh \
             scripts/install-cli.ps1 \
             --clobber
+
+      - name: Verify release assets before publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          expected=(
+            "codex-history-cli-Linux-arm64"
+            "codex-history-cli-Linux-x64"
+            "codex-history-cli-macOS-arm64"
+            "codex-history-cli-macOS-x64"
+            "codex-history-cli-Windows-x64.exe"
+            "codex-history-viewer-Linux-x64.AppImage"
+            "codex-history-viewer-Linux-x64.deb"
+            "codex-history-viewer-Linux-x64.rpm"
+            "codex-history-viewer-macOS-arm64.dmg"
+            "codex-history-viewer-macOS-x64.dmg"
+            "codex-history-viewer-Windows-x64-setup.exe"
+            "codex-history-viewer-Windows-x64.msi"
+            "install-cli.ps1"
+            "install-cli.sh"
+            "install-gui.ps1"
+            "install-gui.sh"
+          )
+
+          assets="$(mktemp)"
+          gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name' > "$assets"
+
+          missing=0
+          for name in "${expected[@]}"; do
+            if ! grep -Fxq "$name" "$assets"; then
+              echo "missing release asset: $name" >&2
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Release assets are incomplete; keeping release as draft." >&2
+            exit 1
+          fi
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
