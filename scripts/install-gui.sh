@@ -130,19 +130,59 @@ EOF
   fi
 }
 
-install_linux_appimage() {
-  local arch="$1" tmp_dir="$2" appimage="$tmp_dir/codex-history-viewer.AppImage"
-  if [[ "$arch" != "x86_64" && "$arch" != "amd64" ]]; then
-    echo "error: Linux GUI package is currently published for x64 only. Use codex-history-cli on Linux ARM64." >&2
-    exit 1
+download_asset_any() {
+  local stable_asset="$1" dest="$2" tmp_dir="$3"
+  shift 3
+  local url pattern
+
+  if [[ "$VERSION" == "latest" ]]; then
+    url="https://github.com/${REPO}/releases/latest/download/${stable_asset}"
+  else
+    url="https://github.com/${REPO}/releases/download/${VERSION}/${stable_asset}"
   fi
 
+  if download_direct "$url" "$dest"; then
+    return 0
+  fi
+
+  echo "Direct download failed; trying GitHub CLI with fallback patterns..." >&2
+  for pattern in "$@"; do
+    if download_with_gh_pattern "$pattern" "$dest" "$tmp_dir"; then
+      return 0
+    fi
+  done
+
+  cat >&2 <<EOF
+error: failed to download GUI asset
+
+For draft or private releases, install GitHub CLI and authenticate first:
+  gh auth login
+  VERSION=$VERSION bash scripts/install-gui.sh
+EOF
+  exit 1
+}
+
+install_linux_appimage() {
+  local arch="$1" tmp_dir="$2" appimage="$tmp_dir/codex-history-viewer.AppImage" stable
+  local patterns=()
+
+  case "$arch" in
+    x86_64|amd64)
+      stable="codex-history-viewer-Linux-x64.AppImage"
+      patterns=("Codex.History.Viewer_*_amd64.AppImage")
+      ;;
+    aarch64|arm64)
+      stable="codex-history-viewer-Linux-arm64.AppImage"
+      patterns=("Codex.History.Viewer_*_arm64.AppImage" "Codex.History.Viewer_*_aarch64.AppImage")
+      ;;
+    *)
+      echo "error: unsupported Linux architecture: $arch" >&2
+      exit 1
+      ;;
+  esac
+
   local dir="${INSTALL_DIR:-$HOME/.local/bin}"
-  download_asset \
-    "codex-history-viewer-Linux-x64.AppImage" \
-    "Codex.History.Viewer_*_amd64.AppImage" \
-    "$appimage" \
-    "$tmp_dir"
+  download_asset_any "$stable" "$appimage" "$tmp_dir" "${patterns[@]}"
 
   mkdir -p "$dir"
   install -m 0755 "$appimage" "$dir/codex-history-viewer"

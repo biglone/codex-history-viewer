@@ -29,7 +29,11 @@ jobs:
             rust_targets: ''
           - platform: ubuntu-22.04
             args: ''
-            label: 'Linux'
+            label: 'Linux-x64'
+            rust_targets: ''
+          - platform: ubuntu-24.04-arm
+            args: ''
+            label: 'Linux-arm64'
             rust_targets: ''
 
     runs-on: ${{ matrix.platform }}
@@ -76,7 +80,7 @@ jobs:
 
       # Linux 系统依赖
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -278,6 +282,7 @@ jobs:
             local pattern="$1"
             local alias="$2"
             local tmp
+            ALIAS_UPLOAD_OK=0
             tmp="$(mktemp -d)"
             if gh release download "${GITHUB_REF_NAME}" --pattern "$pattern" --dir "$tmp" --clobber; then
               local source
@@ -285,6 +290,7 @@ jobs:
               if [ -n "$source" ]; then
                 cp "$source" "$alias"
                 gh release upload "${GITHUB_REF_NAME}" "$alias" --clobber
+                ALIAS_UPLOAD_OK=1
               else
                 echo "warning: no asset matched $pattern" >&2
               fi
@@ -294,6 +300,20 @@ jobs:
             rm -rf "$tmp"
           }
 
+          upload_alias_any() {
+            local alias="$1"
+            shift
+            local pattern
+            for pattern in "$@"; do
+              upload_alias "$pattern" "$alias"
+              if [ "${ALIAS_UPLOAD_OK:-0}" -eq 1 ]; then
+                return 0
+              fi
+            done
+            echo "warning: no patterns produced alias $alias" >&2
+            return 0
+          }
+
           upload_alias 'Codex.History.Viewer_*_aarch64.dmg' 'codex-history-viewer-macOS-arm64.dmg'
           upload_alias 'Codex.History.Viewer_*_x64.dmg' 'codex-history-viewer-macOS-x64.dmg'
           upload_alias 'Codex.History.Viewer_*_x64-setup.exe' 'codex-history-viewer-Windows-x64-setup.exe'
@@ -301,6 +321,15 @@ jobs:
           upload_alias 'Codex.History.Viewer_*_amd64.AppImage' 'codex-history-viewer-Linux-x64.AppImage'
           upload_alias 'Codex.History.Viewer_*_amd64.deb' 'codex-history-viewer-Linux-x64.deb'
           upload_alias 'Codex.History.Viewer-*-1.x86_64.rpm' 'codex-history-viewer-Linux-x64.rpm'
+          upload_alias_any 'codex-history-viewer-Linux-arm64.AppImage' \
+            'Codex.History.Viewer_*_arm64.AppImage' \
+            'Codex.History.Viewer_*_aarch64.AppImage'
+          upload_alias_any 'codex-history-viewer-Linux-arm64.deb' \
+            'Codex.History.Viewer_*_arm64.deb' \
+            'Codex.History.Viewer_*_aarch64.deb'
+          upload_alias_any 'codex-history-viewer-Linux-arm64.rpm' \
+            'Codex.History.Viewer-*-1.aarch64.rpm' \
+            'Codex.History.Viewer-*-1.arm64.rpm'
 
       - name: Upload install scripts
         env:
@@ -331,6 +360,9 @@ jobs:
             "codex-history-viewer-Linux-x64.AppImage"
             "codex-history-viewer-Linux-x64.deb"
             "codex-history-viewer-Linux-x64.rpm"
+            "codex-history-viewer-Linux-arm64.AppImage"
+            "codex-history-viewer-Linux-arm64.deb"
+            "codex-history-viewer-Linux-arm64.rpm"
             "codex-history-viewer-macOS-arm64.dmg"
             "codex-history-viewer-macOS-x64.dmg"
             "codex-history-viewer-Windows-x64-setup.exe"
