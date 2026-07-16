@@ -307,6 +307,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${GITHUB_REF_NAME}" \
+            scripts/install.sh \
+            scripts/install.ps1 \
             scripts/install-gui.sh \
             scripts/install-gui.ps1 \
             scripts/install-cli.sh \
@@ -335,6 +337,8 @@ jobs:
             "codex-history-viewer-Windows-x64.msi"
             "install-cli.ps1"
             "install-cli.sh"
+            "install.ps1"
+            "install.sh"
             "install-gui.ps1"
             "install-gui.sh"
           )
